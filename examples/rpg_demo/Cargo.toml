@@ -1,0 +1,31 @@
+
+[package]
+name = "rpg_demo"
+version = "0.1.0"
+edition = "2021"
+authors = ["Oxyde Team"]
+description = "RPG Demo for the Oxyde SDK"
+default-run = "web_server"
+
+[profile.release]
+opt-level = 3       # Maximum optimization
+lto = true          # Enable Link Time Optimization
+codegen-units = 1   # Reduce parallel codegen
+strip = true        # Strip symbols
+debug = false       # No debug info
+panic = 'abort'     # Remove panic unwinding code
+
+[[bin]]
+name = "rpg_demo"
+path = "main.rs"
+
+[[bin]]
+name = "web_server" 
+path = "src/web_server.rs"
+
+[dependencies]
+oxyde = { path = "../.." }
+serde = { version = "1.0.163", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }

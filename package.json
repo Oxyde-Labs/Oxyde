@@ -1,0 +1,19 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "Oxyde is a Rust-based SDK designed for integrating intelligent AI-powered NPCs into your games. The SDK supports multiple game engines and provides real-time inference capabilities.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.37.0",
+    "openai": "^4.104.0"
+  }
+}
