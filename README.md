@@ -1,5 +1,5 @@
 # Oxyde: AI Agent SDK for Game NPCs
-![Oxyde Logo](https://raw.githubusercontent.com/DanielKrivchun/Oxyde/main/assets/oxyde-logo.png)
+![Oxyde Logo](https://raw.githubusercontent.com/DanielKrivchun/Oxyde/506723f01dbc9bc15c8834b93e77219ee854c20c/assets/oxyde-logo.png)
 
 
 Oxyde is a revolutionary Rust-based SDK for creating autonomous, goal-driven NPCs with advanced AI and emotional intelligence. Build NPCs that pursue their own objectives, adapt to player interactions, and generate emergent storylines in real-time.
