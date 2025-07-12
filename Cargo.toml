@@ -1,6 +1,6 @@
 [package]
 name = "oxyde"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["PL, Graft, Y2Kriv, AstralFox, Zeus"]
 description = "AI Agent SDK for Game NPCs"
