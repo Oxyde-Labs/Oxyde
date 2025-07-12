@@ -7,8 +7,8 @@ description = "AI Agent SDK for Game NPCs"
 license = "MIT"
 repository = "https://github.com/DanielKrivchun/Oxyde"
 readme = "README.md"
-keywords = ["development-tools", "game-development", "game-engines"]
-categories = ["game-development", "ai"]
+keywords = ["ai", "game", "npc", "agent", "sdk"]
+categories = ["development-tools", "game-development", "game-engines"]
 
 [profile.release]
 opt-level = 'z'     # Maximum size optimization
