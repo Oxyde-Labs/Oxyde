@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -376,7 +375,7 @@ impl AgentBuilder {
         for behavior_box in self.behaviors {
             // Unbox the behavior - in a real implementation we'd need type checking
             // but for now we'll create a simple dummy behavior to get it to compile
-            use crate::oxyde_game::behavior::{Behavior, GreetingBehavior};
+            use crate::oxyde_game::behavior::GreetingBehavior;
             let dummy_behavior = GreetingBehavior::new("Hello there!");
             agent.add_behavior(dummy_behavior).await;
         }

@@ -3,6 +3,10 @@
 //! This module provides various utility functions used across the SDK.
 
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// Counter to ensure uniqueness even when called rapidly
+static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Generate a unique ID using the current timestamp
 ///
@@ -15,7 +19,9 @@ pub fn generate_id() -> String {
         .unwrap_or_default()
         .as_millis();
     
-    format!("oxid-{}", timestamp)
+    let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
+    
+    format!("oxid-{}-{}", timestamp, counter)
 }
 
 /// Returns the current timestamp in milliseconds
@@ -112,15 +118,15 @@ mod tests {
         let memory = "The player character found a rusty sword in the cave";
         
         // High relevance
-        let query1 = "Where did I find the sword?";
+        let query1 = "find sword cave";
         let score1 = calculate_relevance(memory, query1);
         
         // Low relevance
-        let query2 = "How do I craft a potion?";
+        let query2 = "craft potion magic";
         let score2 = calculate_relevance(memory, query2);
         
-        assert!(score1 > 0.3, "Score should be reasonably high for relevant query");
-        assert!(score2 < 0.2, "Score should be low for irrelevant query");
+        assert!(score1 > 0.6, "Score should be reasonably high for relevant query");
+        assert!(score2 < 0.1, "Score should be low for irrelevant query");
         assert!(score1 > score2, "Relevant query should score higher");
     }
     

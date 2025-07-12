@@ -2,7 +2,6 @@
 //!
 //! This module provides the error types used throughout the SDK.
 
-use std::fmt;
 use std::io;
 
 use thiserror::Error;

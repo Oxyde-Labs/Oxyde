@@ -8,10 +8,8 @@
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -458,7 +456,7 @@ impl MemorySystem {
     /// # Returns
     ///
     /// Success or error
-    pub async fn add(&self, mut memory: Memory) -> Result<()> {
+    pub async fn add(&self, memory: Memory) -> Result<()> {
         // Generate embedding for the memory if vector embeddings are enabled
         #[cfg(feature = "vector-memory")]
         if self.config.use_embeddings && memory.embedding.is_none() {

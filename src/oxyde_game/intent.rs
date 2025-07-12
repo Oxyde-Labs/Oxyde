@@ -141,7 +141,8 @@ impl Intent {
         ].iter().cloned().collect();
         
         for word in text.split_whitespace() {
-            let clean_word = word.trim().to_lowercase();
+            // Remove punctuation from the word
+            let clean_word = word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
             if clean_word.len() > 2 && !stopwords.contains(clean_word.as_str()) {
                 keywords.push(clean_word);
             }
@@ -167,7 +168,11 @@ impl Intent {
         ];
         
         let text_lower = text.to_lowercase();
-        greetings.iter().any(|g| text_lower.contains(g))
+        // Check if the text starts with a greeting or contains it as a whole word
+        greetings.iter().any(|g| {
+            text_lower.starts_with(g) || 
+            text_lower.split_whitespace().any(|word| word == *g)
+        })
     }
     
     /// Check if text is a command

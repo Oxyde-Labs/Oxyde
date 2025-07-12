@@ -12,7 +12,6 @@ use uuid::Uuid;
 use ffi_support::{ByteBuffer, FfiStr};
 
 use crate::agent::{Agent, AgentContext};
-use crate::config::AgentConfig;
 use crate::oxyde_game::bindings::{EngineBinding, load_agent_config, parse_context_json};
 use crate::{OxydeError, Result};
 

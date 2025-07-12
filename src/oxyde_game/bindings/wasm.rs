@@ -12,7 +12,6 @@ use wasm_bindgen::prelude::*;
 use uuid::Uuid;
 
 use crate::agent::{Agent, AgentContext, AgentState};
-use crate::config::AgentConfig;
 use crate::oxyde_game::bindings::{EngineBinding, load_agent_config, parse_context_json};
 use crate::{OxydeError, Result};
 

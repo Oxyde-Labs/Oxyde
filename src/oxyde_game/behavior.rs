@@ -4,7 +4,6 @@
 //! react to player actions, environmental changes, and other triggers.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
