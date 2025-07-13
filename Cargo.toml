@@ -42,7 +42,7 @@ name = "oxyde"
 path = "src/lib.rs"
 
 [package]
-authors = ["PL, Graft, Y2Kriv, AstralFox, Zeus"]
+authors = [" Astral, graft, PL, y2, zeus "]
 categories = ["development-tools", "game-development", "game-engines"]
 description = "AI Agent SDK for Game NPCs"
 edition = "2021"
