@@ -4,7 +4,7 @@
 <h3 align="center">
   <a href="https://Oxyde.rs">🌐 Website</a> •
   <a href="https://docs.oxyde.rs">📄 Docs</a> • 
-  <a href="Oxyde_RS"> 𝕏</a>
+  <a href="https://x.com/Oxyde_RS"> 𝕏</a>
 </h3>
 
 Oxyde is a revolutionary Rust-based SDK for creating autonomous, goal-driven NPCs with advanced AI and emotional intelligence. Build NPCs that pursue their own objectives, adapt to player interactions, and generate emergent storylines in real-time.
