@@ -1,8 +1,30 @@
 # Oxyde: AI Agent SDK for Game NPCs
 ![Oxyde Logo](https://raw.githubusercontent.com/Oxyde-Labs/Oxyde-Assets/main/Images/Oxyde-Logo-Orange.png)
 
+<h3 align="center">
+  <a href="https://Oxyde.rs">🌐 Website</a> •
+  <a href="https://docs.oxyde.rs">📄 Docs</a> • 
+  <a href="Oxyde_RS"> 𝕏</a>
+</h3>
+
 Oxyde is a revolutionary Rust-based SDK for creating autonomous, goal-driven NPCs with advanced AI and emotional intelligence. Build NPCs that pursue their own objectives, adapt to player interactions, and generate emergent storylines in real-time.
 
+## Table of contents
+
+- [Revolutionary Features](#revolutionary-features)
+- [Engine Support](#engine-support)
+- [Advanced AI Systems](#advanced-ai-systems)
+- [Live Demo Applications](#live-demo-applications)
+- [Quick Setup](#quick-setup)
+- [How to Experience the Demo](#how-to-experience-the-demo)
+- [Architecture Overview](#architecture-overview)
+- [Adding New LLM Providers](#adding-new-llm-providers)
+- [Implementation Status](#implementation-status)
+- [Why This Matters](#why-this-matters)
+- [Technical Innovation](#technical-innovation)
+- [Future Roadmap](#future-roadmap)
+
+<a id="revolutionary-features"></a>
 ## 🚀 Revolutionary Features
 
 - **Goal-Driven AI with Emergent Storytelling**: NPCs pursue personal objectives like "earn 1000 gold" or "uncover criminal networks", creating dynamic narratives that evolve based on player interactions
@@ -12,6 +34,7 @@ Oxyde is a revolutionary Rust-based SDK for creating autonomous, goal-driven NPC
 - **Real-Time Adaptation**: NPCs learn from every interaction, updating goals and emotional states dynamically
 - **Dynamic Story Generation**: Automatic story event creation based on NPC goal progress and emotional states
 
+<a id="engine-support"></a>
 ## 🎮 Engine Support
 
 - **Unity**: Full C# bindings with memory/state management
@@ -19,6 +42,7 @@ Oxyde is a revolutionary Rust-based SDK for creating autonomous, goal-driven NPC
 - **WebAssembly**: Browser-based games with async inference
 - **Standalone**: Direct Rust integration for custom engines
 
+<a id="advanced-ai-systems"></a>
 ## 🧠 Advanced AI Systems
 
 - **Multi-Provider LLM Integration**: OpenAI GPT-4o, Anthropic Claude-3.5, Groq Llama3, xAI Grok-2, Perplexity Sonar, with intelligent provider selection
@@ -27,6 +51,7 @@ Oxyde is a revolutionary Rust-based SDK for creating autonomous, goal-driven NPC
 - **Emotional Evolution**: Personality traits that change based on player relationships and experiences
 - **Emergent Narrative Creation**: Dynamic story events generated from NPC interactions and goal progress
 
+<a id="live-demo-applications"></a>
 ## 🎯 Live Demo Applications
 
 ### 1. **Interactive Web RPG Demo** (Recommended)
@@ -57,6 +82,7 @@ rustc -o rpg_demo_standalone rpg_demo_standalone.rs
 ./rpg_demo_standalone
 ```
 
+<a id="quick-setup"></a>
 ## 🛠️ Quick Setup
 
 ### Prerequisites
@@ -97,6 +123,7 @@ Add Oxyde to your Rust project:
 oxyde = { path = "path/to/oxyde-ai-sdk" }
 ```
 
+<a id="how-to-experience-the-demo"></a>
 ## 🎮 How to Experience the Demo
 
 ### Web Interface Controls
@@ -112,6 +139,7 @@ oxyde = { path = "path/to/oxyde-ai-sdk" }
 - **Velma the Villager** becomes more social and gossipy as you build friendship
 - **Story Events** generate automatically when NPCs make progress toward goals
 
+<a id="architecture-overview"></a>
 ## 🏗️ Architecture Overview
 
 ### Core SDK Structure
@@ -162,6 +190,7 @@ oxyde/
 - **Consequence Systems**: Player actions have lasting effects on NPC behavior
 - **Narrative Coherence**: Story events maintain consistency with established character goals
 
+<a id="adding-new-llm-providers"></a>
 ## 🔧 Adding New LLM Providers
 
 ### Step-by-Step Integration Guide
@@ -328,6 +357,7 @@ let request_body = json!({
 - **Model Selection**: Allow dynamic model selection based on use case
 - **Context Awareness**: Define clear routing triggers for optimal provider selection
 
+<a id="implementation-status"></a>
 ## 📊 Implementation Status
 
 | Component | Status | Description |
@@ -358,6 +388,7 @@ let request_body = json!({
 - Advanced goal completion rewards and consequences
 - Multi-NPC relationship networks and conflicts
 
+<a id="why-this-matters"></a>
 ## 🚀 Why This Matters
 
 Oxyde represents a breakthrough in game AI - moving beyond scripted responses to truly autonomous NPCs that:
@@ -369,6 +400,7 @@ Oxyde represents a breakthrough in game AI - moving beyond scripted responses to
 
 This creates gameplay experiences that are genuinely unpredictable and personally meaningful to each player.
 
+<a id="technical-innovation"></a>
 ## 🔬 Technical Innovation
 
 - **First** Rust-based SDK for goal-driven game AI
@@ -377,6 +409,7 @@ This creates gameplay experiences that are genuinely unpredictable and personall
 - **Production-ready** multi-LLM architecture with cost optimization
 - **Real-time** personality adaptation without performance penalties
 
+<a id="future-roadmap"></a>
 ## 📈 Future Roadmap
 
 ### Phase 1: Enhanced Autonomy
