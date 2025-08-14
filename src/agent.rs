@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::audio::{TTSService, EmotionalState, AudioData, TTSError, TTSConfig};
 use crate::config::AgentConfig;
 use crate::inference::InferenceEngine;
 use crate::memory::{Memory, MemorySystem, MemoryCategory};

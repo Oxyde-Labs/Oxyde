@@ -40,6 +40,7 @@ pub use inference::InferenceEngine;
 pub use memory::MemorySystem;
 
 // Modules
+pub mod audio;
 pub mod agent;
 pub mod config;
 pub mod inference;
