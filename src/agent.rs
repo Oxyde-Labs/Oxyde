@@ -9,10 +9,10 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::audio::{TTSService, EmotionalState, AudioData, TTSError, TTSConfig};
+use crate::audio::{AudioData, EmotionalState, TTSConfig, TTSError, TTSService};
 use crate::config::AgentConfig;
 use crate::inference::InferenceEngine;
-use crate::memory::{Memory, MemorySystem, MemoryCategory};
+use crate::memory::{Memory, MemoryCategory, MemorySystem};
 use crate::oxyde_game::behavior::{Behavior, BehaviorResult};
 use crate::oxyde_game::intent::Intent;
 use crate::Result;
@@ -91,6 +91,9 @@ pub struct Agent {
     /// Behaviors available to the agent
     behaviors: RwLock<Vec<Box<dyn Behavior>>>,
 
+    /// TTS service for generating speech
+    tts_service: Option<Arc<TTSService>>,
+
     /// Callbacks for agent events
     callbacks: Mutex<HashMap<String, Vec<CallbackWrapper>>>,
 }
@@ -116,9 +119,57 @@ impl Agent {
             state: RwLock::new(AgentState::Initializing),
             inference,
             memory,
+            tts_service: None, // TTS service is optional ..... REMOVE IF TTS WILL ALWAYS BE REQUIRED
             context: RwLock::new(HashMap::new()),
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Create a new agent with TTS service
+    pub fn new_with_tts(config: AgentConfig) -> Self {
+        let inference = Arc::new(InferenceEngine::new(&config.inference));
+        let memory = Arc::new(MemorySystem::new(config.memory.clone()));
+
+        // Initialize TTS if configured
+        let tts_service = config.tts.as_ref().map(|tts_config| {
+            Arc::new(TTSService::new(
+                tts_config.default_provider.clone(),
+                tts_config.clone(),
+            ))
+        });
+
+        Self {
+            id: Uuid::new_v4(),
+            name: config.agent.name.clone(),
+            config,
+            state: RwLock::new(AgentState::Initializing),
+            inference,
+            memory,
+            tts_service, // Add TTS service field
+            context: RwLock::new(HashMap::new()),
+            behaviors: RwLock::new(Vec::new()),
+            callbacks: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Generate speech for agent response
+    pub async fn speak(
+        &self,
+        text: &str,
+        emotions: &EmotionalState,
+        urgency: f32,
+    ) -> Result<AudioData> {
+        if let Some(tts) = &self.tts_service {
+            tts.synthesize_npc_speech(&self.name, text, emotions, urgency)
+                .await
+                .map_err(|e| {
+                    crate::OxydeError::AudioError(TTSError::AudioProcessingError(e.to_string()))
+                })
+        } else {
+            Err(crate::OxydeError::ConfigurationError(
+                "TTS not configured".to_string(),
+            ))
         }
     }
 
@@ -168,12 +219,14 @@ impl Agent {
         log::info!("Agent {} started", self.name);
 
         // Initialize memory with agent's backstory and knowledge
-        self.memory.add(Memory::new(
-            MemoryCategory::Semantic,
-            &serde_json::to_string(&self.config.agent.backstory)?,
-            f64::INFINITY,
-            None
-        )).await?;
+        self.memory
+            .add(Memory::new(
+                MemoryCategory::Semantic,
+                &serde_json::to_string(&self.config.agent.backstory)?,
+                f64::INFINITY,
+                None,
+            ))
+            .await?;
 
         self.trigger_callback("start", "Agent started").await;
 
@@ -212,12 +265,9 @@ impl Agent {
         let intent = Intent::analyze(input).await?;
 
         // Update memory with player input
-        self.memory.add(Memory::new(
-                MemoryCategory::Episodic,
-                input,
-                1.0,
-                None
-            )).await?;
+        self.memory
+            .add(Memory::new(MemoryCategory::Episodic, input, 1.0, None))
+            .await?;
 
         // Find behaviors that match the intent
         let behaviors = self.behaviors.read().await;
@@ -238,11 +288,11 @@ impl Agent {
                     BehaviorResult::Response(text) => {
                         response = text;
                         break;
-                    },
+                    }
                     BehaviorResult::Action(action) => {
                         // Trigger action callback
                         self.trigger_callback("action", &action).await;
-                    },
+                    }
                     BehaviorResult::None => {
                         // Continue to next behavior
                     }
@@ -262,15 +312,15 @@ impl Agent {
 
             // Generate response using inference engine
             let context = self.context.read().await.clone();
-            response = self.inference.generate_response(input, &memories, &context).await?;
+            response = self
+                .inference
+                .generate_response(input, &memories, &context)
+                .await?;
 
             // Store the response in memory
-            self.memory.add(Memory::new(
-                MemoryCategory::Semantic,
-                &response,
-                1.0,
-                None
-            )).await?;
+            self.memory
+                .add(Memory::new(MemoryCategory::Semantic, &response, 1.0, None))
+                .await?;
         }
 
         {
@@ -315,7 +365,7 @@ impl Agent {
     }
 
     /// Create a new agent with the same configuration but new state
-    /// 
+    ///
     /// This is a simplified clone method that creates a new agent with the same
     /// configuration but with fresh state. This is useful for creating copies
     /// of agents for engine bindings.
@@ -331,8 +381,17 @@ impl std::fmt::Debug for Agent {
             .field("name", &self.name)
             .field("config", &self.config)
             // Don't debug the behaviors or callbacks directly as they don't implement Debug
-            .field("behaviors_count", &format!("<{} behaviors>", self.behaviors.try_read().map(|b| b.len()).unwrap_or(0)))
-            .field("callbacks_count", &format!("<{} callback types>", self.callbacks.lock().unwrap().len()))
+            .field(
+                "behaviors_count",
+                &format!(
+                    "<{} behaviors>",
+                    self.behaviors.try_read().map(|b| b.len()).unwrap_or(0)
+                ),
+            )
+            .field(
+                "callbacks_count",
+                &format!("<{} callback types>", self.callbacks.lock().unwrap().len()),
+            )
             .finish()
     }
 }
@@ -402,6 +461,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            tts: None, // No TTS for this test
         };
 
         let agent = Agent::new(config);

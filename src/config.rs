@@ -10,20 +10,20 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{OxydeError, Result};
+use crate::{audio::TTSConfig, OxydeError, Result};
 
 /// Configuration for an agent's personality and behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPersonality {
     /// Agent name
     pub name: String,
-    
+
     /// Agent role (e.g., "Shopkeeper", "Guard", "Villager")
     pub role: String,
-    
+
     /// Agent backstory and personality traits
     pub backstory: Vec<String>,
-    
+
     /// Agent knowledge base (facts it knows about the world)
     pub knowledge: Vec<String>,
 }
@@ -51,38 +51,38 @@ pub struct MemoryConfig {
     /// Maximum number of memories to store
     #[serde(default = "default_memory_capacity")]
     pub capacity: usize,
-    
+
     /// Whether to persist memories to disk
     #[serde(default)]
     pub persistence: bool,
-    
+
     /// Time-based decay rate for memories (0.0 - 1.0)
     #[serde(default = "default_memory_decay")]
     pub decay_rate: f64,
-    
+
     /// Importance threshold for retrieving memories
     #[serde(default = "default_memory_threshold")]
     pub importance_threshold: f64,
-    
+
     /// Number of memories to keep in short-term memory
     #[serde(default = "default_short_term_capacity")]
     pub short_term_capacity: usize,
-    
+
     /// Whether to use vector embeddings for memory retrieval
     #[serde(default)]
     pub use_embeddings: bool,
-    
+
     /// Vector embedding model type
     #[serde(default)]
     pub embedding_model: EmbeddingModelType,
-    
+
     /// Path to custom embedding model (if using custom model)
     pub custom_model_path: Option<String>,
-    
+
     /// Dimension of the embeddings
     #[serde(default = "default_embedding_dim")]
     pub embedding_dimension: usize,
-    
+
     /// Memory categories to prioritize
     #[serde(default)]
     pub priority_categories: Vec<String>,
@@ -131,32 +131,32 @@ pub struct InferenceConfig {
     /// Model to use for inference
     #[serde(default = "default_model")]
     pub model: String,
-    
+
     /// Whether to use local models or cloud APIs
     #[serde(default)]
     pub use_local: bool,
-    
+
     /// Path to the local model file (if use_local is true)
     pub local_model_path: Option<String>,
-    
+
     /// Cloud API endpoint (if use_local is false)
     pub api_endpoint: Option<String>,
-    
+
     /// API key for cloud service
     pub api_key: Option<String>,
-    
+
     /// Inference temperature (0.0 - 1.0)
     #[serde(default = "default_temperature")]
     pub temperature: f32,
-    
+
     /// Maximum number of tokens to generate
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
-    
+
     /// Timeout for inference requests in milliseconds
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
-    
+
     /// Fallback API to use if primary fails
     pub fallback_api: Option<String>,
 }
@@ -198,15 +198,15 @@ impl Default for InferenceConfig {
 pub struct BehaviorConfig {
     /// Trigger condition for the behavior
     pub trigger: String,
-    
+
     /// Cooldown period in seconds before the behavior can trigger again
     #[serde(default)]
     pub cooldown: u64,
-    
+
     /// Priority of the behavior (higher means more important)
     #[serde(default)]
     pub priority: u32,
-    
+
     /// Additional behavior-specific configuration
     #[serde(flatten)]
     pub parameters: HashMap<String, serde_json::Value>,
@@ -217,18 +217,22 @@ pub struct BehaviorConfig {
 pub struct AgentConfig {
     /// Agent personality configuration
     pub agent: AgentPersonality,
-    
+
     /// Memory system configuration
     #[serde(default)]
     pub memory: MemoryConfig,
-    
+
     /// Inference engine configuration
     #[serde(default)]
     pub inference: InferenceConfig,
-    
+
     /// Behavior configurations
     #[serde(default)]
     pub behavior: HashMap<String, BehaviorConfig>,
+
+    ///Text to Speech Configurations
+    #[serde(default)]
+    pub tts: Option<TTSConfig>,
 }
 
 impl AgentConfig {
@@ -245,30 +249,24 @@ impl AgentConfig {
         let file = File::open(path.as_ref()).map_err(|e| {
             OxydeError::ConfigurationError(format!("Failed to open config file: {}", e))
         })?;
-        
+
         let reader = BufReader::new(file);
-        
+
         let extension = path.as_ref().extension().and_then(|ext| ext.to_str());
-        
+
         match extension {
-            Some("json") => {
-                serde_json::from_reader(reader).map_err(|e| {
-                    OxydeError::ConfigurationError(format!("Failed to parse JSON config: {}", e))
-                })
-            },
-            Some("yaml") | Some("yml") => {
-                serde_yaml::from_reader(reader).map_err(|e| {
-                    OxydeError::ConfigurationError(format!("Failed to parse YAML config: {}", e))
-                })
-            },
-            _ => {
-                Err(OxydeError::ConfigurationError(
-                    "Unknown config file format. Expected .json, .yaml, or .yml".to_string()
-                ))
-            }
+            Some("json") => serde_json::from_reader(reader).map_err(|e| {
+                OxydeError::ConfigurationError(format!("Failed to parse JSON config: {}", e))
+            }),
+            Some("yaml") | Some("yml") => serde_yaml::from_reader(reader).map_err(|e| {
+                OxydeError::ConfigurationError(format!("Failed to parse YAML config: {}", e))
+            }),
+            _ => Err(OxydeError::ConfigurationError(
+                "Unknown config file format. Expected .json, .yaml, or .yml".to_string(),
+            )),
         }
     }
-    
+
     /// Save the agent configuration to a file
     ///
     /// # Arguments
@@ -282,25 +280,19 @@ impl AgentConfig {
         let file = File::create(path.as_ref()).map_err(|e| {
             OxydeError::ConfigurationError(format!("Failed to create config file: {}", e))
         })?;
-        
+
         let extension = path.as_ref().extension().and_then(|ext| ext.to_str());
-        
+
         match extension {
-            Some("json") => {
-                serde_json::to_writer_pretty(file, self).map_err(|e| {
-                    OxydeError::ConfigurationError(format!("Failed to write JSON config: {}", e))
-                })
-            },
-            Some("yaml") | Some("yml") => {
-                serde_yaml::to_writer(file, self).map_err(|e| {
-                    OxydeError::ConfigurationError(format!("Failed to write YAML config: {}", e))
-                })
-            },
-            _ => {
-                Err(OxydeError::ConfigurationError(
-                    "Unknown config file format. Expected .json, .yaml, or .yml".to_string()
-                ))
-            }
+            Some("json") => serde_json::to_writer_pretty(file, self).map_err(|e| {
+                OxydeError::ConfigurationError(format!("Failed to write JSON config: {}", e))
+            }),
+            Some("yaml") | Some("yml") => serde_yaml::to_writer(file, self).map_err(|e| {
+                OxydeError::ConfigurationError(format!("Failed to write YAML config: {}", e))
+            }),
+            _ => Err(OxydeError::ConfigurationError(
+                "Unknown config file format. Expected .json, .yaml, or .yml".to_string(),
+            )),
         }
     }
 }
@@ -308,20 +300,20 @@ impl AgentConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_default_configs() {
         let memory_config = MemoryConfig::default();
         assert_eq!(memory_config.capacity, 100);
         assert_eq!(memory_config.persistence, false);
         assert_eq!(memory_config.decay_rate, 0.05);
-        
+
         let inference_config = InferenceConfig::default();
         assert_eq!(inference_config.model, "llama2-7b");
         assert_eq!(inference_config.temperature, 0.7);
         assert_eq!(inference_config.max_tokens, 256);
     }
-    
+
     #[test]
     fn test_serialization() {
         let config = AgentConfig {
@@ -334,11 +326,12 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            tts: None
         };
-        
+
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: AgentConfig = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.agent.name, "Test Agent");
         assert_eq!(deserialized.agent.role, "Tester");
     }

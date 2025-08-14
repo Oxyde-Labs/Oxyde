@@ -6,6 +6,8 @@ use std::io;
 
 use thiserror::Error;
 
+use crate::audio::TTSError;
+
 /// Main error type for the Oxyde SDK
 #[derive(Error, Debug)]
 pub enum OxydeError {
@@ -44,10 +46,14 @@ pub enum OxydeError {
     /// Request errors
     #[error("Request error: {0}")]
     RequestError(String),
-    
+
     /// CLI errors
     #[error("CLI error: {0}")]
     CliError(String),
+
+    /// Audio processing errors
+    #[error("Audio processing error: {0}")]
+    AudioError(TTSError),
 }
 
 // Display implementation is automatically provided by thiserror derive macro
