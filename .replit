@@ -1,0 +1,7 @@
+modules = ["rust-stable", "dotnet-7.0", "cpp-clang14", "nodejs-20"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+packages = ["openssl", "pkg-config"]
