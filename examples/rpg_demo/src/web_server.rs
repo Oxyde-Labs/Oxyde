@@ -1,24 +1,66 @@
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{Html, IntoResponse, Json, Response},
+    routing::{get, post},
+    Router,
+};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod openai_service;
-mod llm_service;
 mod emotion_engine;
 mod goal_system;
-use openai_service::OpenAIService;
-use llm_service::{LLMService, select_optimal_provider};
+mod llm_service;
+mod openai_service;
+
 use emotion_engine::EmotionEngine;
 use goal_system::GoalEngine;
+use llm_service::{select_optimal_provider, LLMService};
+use openai_service::OpenAIService;
+
+#[derive(Clone)]
+struct AppState {
+    _openai_service: Arc<OpenAIService>,
+    conversation_history: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    emotion_engine: Arc<Mutex<EmotionEngine>>,
+    goal_engine: Arc<Mutex<GoalEngine>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatRequest {
+    npc_id: String,
+    npc_name: String,
+    npc_role: String,
+    player_message: String,
+    #[allow(dead_code)]
+    history: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatResponse {
+    response: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conversation_ended: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct ErrorResponse {
+    error: String,
+}
 
 #[tokio::main]
 async fn main() {
-    let port = "5000";
-    let addr = format!("0.0.0.0:{}", port);
-    
-    // Initialize OpenAI service
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     let openai_service = match OpenAIService::new() {
         Ok(service) => Arc::new(service),
         Err(e) => {
@@ -26,67 +68,30 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    
-    // Store conversation history for each NPC
-    let conversation_history: Arc<Mutex<HashMap<String, Vec<String>>>> = Arc::new(Mutex::new(HashMap::new()));
-    
-    // Initialize emotion engine for dynamic NPC personalities
-    let emotion_engine: Arc<Mutex<EmotionEngine>> = Arc::new(Mutex::new(EmotionEngine::new()));
-    
-    // Initialize goal engine for autonomous NPC behavior
-    let goal_engine: Arc<Mutex<GoalEngine>> = Arc::new(Mutex::new(GoalEngine::new()));
 
-    let listener = match TcpListener::bind(&addr) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("Failed to bind to {}: {}", addr, e);
-            std::process::exit(1);
-        }
+    let app_state = AppState {
+        _openai_service: openai_service,
+        conversation_history: Arc::new(Mutex::new(HashMap::new())),
+        emotion_engine: Arc::new(Mutex::new(EmotionEngine::new())),
+        goal_engine: Arc::new(Mutex::new(GoalEngine::new())),
     };
 
-    println!("Web server running on port {}", port);
+    let app = Router::new()
+        .route("/", get(serve_html))
+        .route("/ai-chat", post(handle_ai_chat))
+        .layer(TraceLayer::new_for_http())
+        .with_state(app_state);
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let openai_service = Arc::clone(&openai_service);
-                let conversation_history = Arc::clone(&conversation_history);
-                let emotion_engine = Arc::clone(&emotion_engine);
-                let goal_engine = Arc::clone(&goal_engine);
-                thread::spawn(move || {
-                    let rt = tokio::runtime::Runtime::new().unwrap();
-                    rt.block_on(async {
-                        if let Err(e) = handle_connection(stream, openai_service, conversation_history, emotion_engine, goal_engine).await {
-                            eprintln!("Error handling connection: {}", e);
-                        }
-                    });
-                });
-            }
-            Err(e) => {
-                eprintln!("Connection failed: {}", e);
-            }
-        }
-    }
+    let addr = "0.0.0.0:5000";
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    
+    tracing::info!("Web server running on {}", addr);
+    
+    axum::serve(listener, app).await.unwrap();
 }
 
-async fn handle_connection(
-    mut stream: TcpStream,
-    openai_service: Arc<OpenAIService>,
-    conversation_history: Arc<Mutex<HashMap<String, Vec<String>>>>,
-    emotion_engine: Arc<Mutex<EmotionEngine>>,
-    goal_engine: Arc<Mutex<GoalEngine>>
-) -> std::io::Result<()> {
-    let mut buffer = [0; 1024];
-    stream.read(&mut buffer)?;
-    
-    let request = String::from_utf8_lossy(&buffer);
-    
-    // Handle AI chat requests
-    if request.contains("POST /ai-chat") {
-        return handle_ai_chat(stream, &request, openai_service, conversation_history, emotion_engine, goal_engine).await;
-    }
-
-    let html = r#"<!DOCTYPE html>
+async fn serve_html() -> Html<&'static str> {
+    Html(r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -173,7 +178,6 @@ async fn handle_connection(
               greeting: "Oh hello there! Lovely weather we're having, isn't it?" }
         ];
         
-        // Memory for each NPC
         const npcMemories = {
             'marcus': [],
             'gareth': [],
@@ -219,11 +223,9 @@ async fn handle_connection(
                 currentNPC = nearbyNPC;
                 document.getElementById('chatInput').style.display = 'block';
                 
-                // Show initial greeting without sending a message
                 dialogue.innerHTML = `<strong>${nearbyNPC.name}:</strong><br>"${nearbyNPC.greeting}"<br><em>Type your message below and press Enter or click Send.</em>`;
                 dialogue.style.background = '#fff3cd';
                 
-                // Focus on the input box
                 document.getElementById('messageInput').focus();
             }
         }
@@ -241,13 +243,11 @@ async fn handle_connection(
         async function sendAIMessage(playerMessage) {
             if (!currentNPC) return;
             
-            // Add player message to dialogue
             const currentDialogue = dialogue.innerHTML;
             dialogue.innerHTML = currentDialogue + `<br><strong>You:</strong> ${playerMessage}<br><strong>${currentNPC.name}:</strong> Thinking...`;
             dialogue.style.background = '#fff3cd';
             
             try {
-                // Get AI response from foundation model
                 const response = await fetch('/ai-chat', {
                     method: 'POST',
                     headers: {
@@ -268,7 +268,6 @@ async fn handle_connection(
                     const data = await response.json();
                     console.log('AI response data:', data);
                     
-                    // Handle conversation end if NPC is too emotional
                     if (data.conversation_ended) {
                         const updatedDialogue = dialogue.innerHTML.replace('Thinking...', `"${data.response}"`);
                         dialogue.innerHTML = updatedDialogue + `<br><em>The conversation has ended.</em>`;
@@ -276,15 +275,12 @@ async fn handle_connection(
                         return;
                     }
                     
-                    // Update dialogue with AI response
                     const updatedDialogue = dialogue.innerHTML.replace('Thinking...', `"${data.response}"`);
                     dialogue.innerHTML = updatedDialogue;
                     
-                    // Store in memory
                     npcMemories[currentNPC.id].push(`Player: ${playerMessage}`);
                     npcMemories[currentNPC.id].push(`${currentNPC.name}: ${data.response}`);
                     
-                    // Keep memory manageable
                     if (npcMemories[currentNPC.id].length > 10) {
                         npcMemories[currentNPC.id] = npcMemories[currentNPC.id].slice(-10);
                     }
@@ -310,14 +306,12 @@ async fn handle_connection(
         }
         
         document.addEventListener('keydown', (e) => {
-            // Handle Enter key for sending messages
             if (e.key === 'Enter' && currentNPC && document.activeElement === document.getElementById('messageInput')) {
                 e.preventDefault();
                 sendMessage();
                 return;
             }
             
-            // Don't process movement keys if typing in chat
             if (document.activeElement === document.getElementById('messageInput')) {
                 return;
             }
@@ -332,176 +326,144 @@ async fn handle_connection(
             updatePosition();
         });
         
-        // Initialize
         updatePosition();
     </script>
 </body>
-</html>"#;
-
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
-        html.len(),
-        html
-    );
-
-    stream.write_all(response.as_bytes())?;
-    stream.flush()?;
-    Ok(())
+</html>"#)
 }
 
 async fn handle_ai_chat(
-    mut stream: TcpStream,
-    request: &str,
-    openai_service: Arc<OpenAIService>,
-    conversation_history: Arc<Mutex<HashMap<String, Vec<String>>>>,
-    emotion_engine: Arc<Mutex<EmotionEngine>>,
-    goal_engine: Arc<Mutex<GoalEngine>>
-) -> std::io::Result<()> {
-    // Extract JSON body from request
-    if let Some(body_start) = request.find("\r\n\r\n") {
-        let body = &request[body_start + 4..];
-        let body = body.trim_end_matches('\0');
-        
-        if let Ok(chat_request) = serde_json::from_str::<serde_json::Value>(body) {
-            let npc_id = chat_request["npc_id"].as_str().unwrap_or("");
-            let npc_name = chat_request["npc_name"].as_str().unwrap_or("");
-            let npc_role = chat_request["npc_role"].as_str().unwrap_or("");
-            let player_message = chat_request["player_message"].as_str().unwrap_or("");
-            
-            // Get conversation history
-            let history = {
-                let hist = conversation_history.lock().unwrap();
-                hist.get(npc_id).cloned().unwrap_or_default()
-            };
-            
-            // Initialize NPC goals if this is their first interaction
-            {
-                let mut goal_engine = goal_engine.lock().unwrap();
-                if goal_engine.get_npc_goals(npc_id).is_empty() {
-                    goal_engine.initialize_npc_goals(npc_id, npc_role);
-                }
-            }
+    State(state): State<AppState>,
+    Json(req): Json<ChatRequest>,
+) -> Response {
+    let history = {
+        let hist = state.conversation_history.lock().unwrap();
+        hist.get(&req.npc_id).cloned().unwrap_or_default()
+    };
 
-            // Update NPC emotional state based on player interaction
-            let (emotional_modifier, response_style) = {
-                let mut emotion_engine = emotion_engine.lock().unwrap();
-                emotion_engine.update_npc_emotion(npc_id, npc_role, player_message)
-            };
-            
-            // Check if NPC wants to end conversation due to emotional state
-            let should_end = {
-                let emotion_engine = emotion_engine.lock().unwrap();
-                emotion_engine.should_npc_end_conversation(npc_id)
-            };
-            
-            if should_end {
-                let end_response = match npc_role {
-                    "Guard" => "I have more important duties to attend to.",
-                    "Merchant" => "I need to focus on my business now.",
-                    _ => "I need to be going now.",
-                };
-                
-                let response_json = serde_json::json!({
-                    "response": end_response,
-                    "conversation_ended": true
-                });
-                
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}",
-                    response_json.to_string().len(),
-                    response_json
-                );
-                
-                stream.write_all(response.as_bytes())?;
-                return Ok(());
-            }
-            
-            // Smart provider selection based on message complexity
-            let provider = select_optimal_provider(player_message);
-            let llm_service = match LLMService::new(provider) {
-                Ok(service) => service,
-                Err(e) => {
-                    eprintln!("Failed to create LLM service: {}", e);
-                    let error_response = serde_json::json!({"error": "LLM service unavailable"});
-                    let response = format!(
-                        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}",
-                        error_response.to_string().len(),
-                        error_response
-                    );
-                    stream.write_all(response.as_bytes())?;
-                    return Ok(());
-                }
-            };
-            
-            println!("Using {} for NPC response (fast inference: {}) - Emotional state: {}", 
-                llm_service.get_provider_name(), 
-                llm_service.supports_fast_inference(),
-                emotional_modifier);
-            
-            // Get NPC's current goals and motivation for context
-            let (goal_context, story_event) = {
-                let mut goal_engine = goal_engine.lock().unwrap();
-                let emotion_engine = emotion_engine.lock().unwrap();
-                let emotional_state = emotion_engine.npc_emotions.get(npc_id).cloned()
-                    .unwrap_or_else(|| crate::emotion_engine::EmotionalState::new_for_role(npc_role));
-                
-                let goal_context = goal_engine.get_contextual_motivation(npc_id, &emotional_state);
-                let story_event = goal_engine.generate_story_event(npc_id, player_message);
-                
-                (goal_context, story_event)
-            };
-
-            // Generate AI response with emotional and goal-driven context
-            match llm_service.generate_goal_driven_response(npc_name, npc_role, player_message, &history, &emotional_modifier, &response_style.get_style_prompt(), &goal_context).await {
-                Ok(ai_response) => {
-                    // Update conversation history
-                    {
-                        let mut hist = conversation_history.lock().unwrap();
-                        let npc_history = hist.entry(npc_id.to_string()).or_insert_with(Vec::new);
-                        npc_history.push(format!("Player: {}", player_message));
-                        npc_history.push(format!("{}: {}", npc_name, ai_response));
-                        
-                        // Keep memory manageable
-                        if npc_history.len() > 10 {
-                            *npc_history = npc_history.iter().rev().take(10).rev().cloned().collect();
-                        }
-                    }
-
-                    // Update goal progress based on the interaction
-                    {
-                        let mut goal_engine = goal_engine.lock().unwrap();
-                        goal_engine.update_goal_from_interaction(npc_id, player_message, &ai_response);
-                    }
-                    
-                    let response_json = serde_json::json!({
-                        "response": ai_response
-                    });
-                    
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}",
-                        response_json.to_string().len(),
-                        response_json
-                    );
-                    
-                    stream.write_all(response.as_bytes())?;
-                }
-                Err(_) => {
-                    let error_response = serde_json::json!({
-                        "error": "Failed to generate AI response"
-                    });
-                    
-                    let response = format!(
-                        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}",
-                        error_response.to_string().len(),
-                        error_response
-                    );
-                    
-                    stream.write_all(response.as_bytes())?;
-                }
-            }
+    {
+        let mut goal_engine = state.goal_engine.lock().unwrap();
+        if goal_engine.get_npc_goals(&req.npc_id).is_empty() {
+            goal_engine.initialize_npc_goals(&req.npc_id, &req.npc_role);
         }
     }
-    
-    stream.flush()?;
-    Ok(())
+
+    let (emotional_modifier, response_style) = {
+        let mut emotion_engine = state.emotion_engine.lock().unwrap();
+        emotion_engine.update_npc_emotion(&req.npc_id, &req.npc_role, &req.player_message)
+    };
+
+    let should_end = {
+        let emotion_engine = state.emotion_engine.lock().unwrap();
+        emotion_engine.should_npc_end_conversation(&req.npc_id)
+    };
+
+    if should_end {
+        let end_response = match req.npc_role.as_str() {
+            "guard" => "I have more important duties to attend to.",
+            "merchant" => "I need to focus on my business now.",
+            _ => "I need to be going now.",
+        };
+
+        return (
+            StatusCode::OK,
+            Json(ChatResponse {
+                response: end_response.to_string(),
+                conversation_ended: Some(true),
+            }),
+        )
+            .into_response();
+    }
+
+    let provider = select_optimal_provider(&req.player_message);
+    let llm_service = match LLMService::new(provider) {
+        Ok(service) => service,
+        Err(e) => {
+            tracing::error!("Failed to create LLM service: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "LLM service unavailable".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    tracing::info!(
+        "Using {} for NPC response (fast inference: {}) - Emotional state: {}",
+        llm_service.get_provider_name(),
+        llm_service.supports_fast_inference(),
+        emotional_modifier
+    );
+
+    let goal_context = {
+        let mut goal_engine = state.goal_engine.lock().unwrap();
+        let emotion_engine = state.emotion_engine.lock().unwrap();
+        let emotional_state = emotion_engine
+            .npc_emotions
+            .get(&req.npc_id)
+            .cloned()
+            .unwrap_or_else(|| emotion_engine::EmotionalState::new_for_role(&req.npc_role));
+
+        let goal_context =
+            goal_engine.get_contextual_motivation(&req.npc_id, &emotional_state);
+        let _story_event = goal_engine.generate_story_event(&req.npc_id, &req.player_message);
+
+        goal_context
+    };
+
+    match llm_service
+        .generate_goal_driven_response(
+            &req.npc_name,
+            &req.npc_role,
+            &req.player_message,
+            &history,
+            &emotional_modifier,
+            &response_style.get_style_prompt(),
+            &goal_context,
+        )
+        .await
+    {
+        Ok(ai_response) => {
+            {
+                let mut hist = state.conversation_history.lock().unwrap();
+                let npc_history = hist.entry(req.npc_id.clone()).or_insert_with(Vec::new);
+                npc_history.push(format!("Player: {}", req.player_message));
+                npc_history.push(format!("{}: {}", req.npc_name, ai_response));
+
+                if npc_history.len() > 10 {
+                    *npc_history = npc_history.iter().rev().take(10).rev().cloned().collect();
+                }
+            }
+
+            {
+                let mut goal_engine = state.goal_engine.lock().unwrap();
+                goal_engine.update_goal_from_interaction(
+                    &req.npc_id,
+                    &req.player_message,
+                    &ai_response,
+                );
+            }
+
+            (
+                StatusCode::OK,
+                Json(ChatResponse {
+                    response: ai_response,
+                    conversation_ended: None,
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to generate AI response: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to generate AI response".to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
 }
