@@ -17,7 +17,10 @@ use uuid::Uuid;
 #[cfg(feature = "vector-memory")]
 use hnswlib::Hnsw;
 
-use crate::config::{EmbeddingModelType, MemoryConfig};
+use crate::config::MemoryConfig;
+
+#[cfg(feature = "vector-memory")]
+use crate::config::EmbeddingModelType;
 use crate::{OxydeError, Result};
 
 /// Embedding model for vector representations of text

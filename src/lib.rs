@@ -51,6 +51,7 @@ mod error;
 mod utils;
 
 pub use error::OxydeError;
+/// Type alias for Results that use OxydeError
 pub type Result<T> = std::result::Result<T, OxydeError>;
 
 /// Current version of the Oxyde SDK

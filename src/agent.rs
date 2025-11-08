@@ -372,7 +372,7 @@ impl AgentBuilder {
 
         let agent = Agent::new(config);
 
-        for behavior_box in self.behaviors {
+        for _behavior_box in self.behaviors {
             // Unbox the behavior - in a real implementation we'd need type checking
             // but for now we'll create a simple dummy behavior to get it to compile
             use crate::oxyde_game::behavior::GreetingBehavior;

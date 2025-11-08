@@ -67,6 +67,7 @@ pub struct BaseBehavior {
     priority: u32,
     
     /// Intent types this behavior responds to
+    #[allow(dead_code)]
     intent_types: Vec<String>,
     
     /// Cooldown period in seconds
@@ -264,7 +265,7 @@ impl Behavior for GreetingBehavior {
         intent.intent_type == "proximity" || intent.intent_type == "greeting"
     }
     
-    async fn execute(&self, intent: &Intent, context: &AgentContext) -> Result<BehaviorResult> {
+    async fn execute(&self, _intent: &Intent, context: &AgentContext) -> Result<BehaviorResult> {
         // Check player distance in context
         let player_distance = context.get("player_distance")
             .and_then(|v| v.as_f64())
@@ -289,6 +290,7 @@ impl Behavior for GreetingBehavior {
 /// DialogueBehavior that handles conversations with players
 #[derive(Debug)]
 pub struct DialogueBehavior {
+    #[allow(dead_code)]
     /// Base behavior
     base: BaseBehavior,
     
@@ -379,6 +381,7 @@ impl Behavior for DialogueBehavior {
 #[derive(Debug)]
 pub struct PathfindingBehavior {
     /// Base behavior
+    #[allow(dead_code)]
     base: BaseBehavior,
     
     /// Whether the NPC should follow the player

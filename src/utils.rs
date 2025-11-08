@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // Counter to ensure uniqueness even when called rapidly
+#[allow(dead_code)]
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Generate a unique ID using the current timestamp
@@ -13,6 +14,7 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// # Returns
 ///
 /// A string containing a unique ID
+#[allow(dead_code)]
 pub fn generate_id() -> String {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -29,6 +31,7 @@ pub fn generate_id() -> String {
 /// # Returns
 ///
 /// The current time in milliseconds since the Unix epoch
+#[allow(dead_code)]
 pub fn current_timestamp_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -46,6 +49,7 @@ pub fn current_timestamp_ms() -> u128 {
 /// # Returns
 ///
 /// A relevance score between 0.0 and 1.0
+#[allow(dead_code)]
 pub fn calculate_relevance(memory_content: &str, query: &str) -> f64 {
     // This is a simple implementation for demonstration purposes
     // In a real implementation, this would use a more sophisticated algorithm
@@ -84,6 +88,7 @@ pub fn calculate_relevance(memory_content: &str, query: &str) -> f64 {
 /// # Returns
 ///
 /// The truncated string
+#[allow(dead_code)]
 pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
