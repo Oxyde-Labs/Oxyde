@@ -5,3 +5,31 @@ expertMode = true
 [nix]
 channel = "stable-25_05"
 packages = ["openssl", "pkg-config"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "web_server"
+
+[[workflows.workflow]]
+name = "web_server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd examples/rpg_demo && cargo run --release --bin web_server"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
