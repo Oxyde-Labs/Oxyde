@@ -364,15 +364,30 @@ impl Behavior for DialogueBehavior {
         
         // Generate response
         let response = if let Some(topic) = matched_topic {
-            let responses = self.topics.get(topic).unwrap();
-            let idx = rand::random::<usize>() % responses.len();
-            responses[idx].clone()
+            // Topic was matched from self.topics.keys(), so it must exist
+            match self.topics.get(topic) {
+                Some(responses) if !responses.is_empty() => {
+                    let idx = rand::random::<usize>() % responses.len();
+                    responses[idx].clone()
+                }
+                _ => {
+                    // Fallback to default if topic has no responses
+                    if self.default_responses.is_empty() {
+                        return Ok(BehaviorResult::None);
+                    }
+                    let idx = rand::random::<usize>() % self.default_responses.len();
+                    self.default_responses[idx].clone()
+                }
+            }
         } else {
             // No matching topic, use default response
+            if self.default_responses.is_empty() {
+                return Ok(BehaviorResult::None);
+            }
             let idx = rand::random::<usize>() % self.default_responses.len();
             self.default_responses[idx].clone()
         };
-        
+
         Ok(BehaviorResult::Response(response))
     }
 }
