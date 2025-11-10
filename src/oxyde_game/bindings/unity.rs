@@ -71,7 +71,9 @@ impl UnityBinding {
     ///
     /// The agent or an error if not found
     pub fn get_agent(&self, id: &str) -> Result<Agent> {
-        let agents = self.agents.lock().unwrap();
+        let agents = self.agents.lock().map_err(|e| {
+            OxydeError::BindingError(format!("Failed to lock agents mutex: {}", e))
+        })?;
         agents.get(id)
             .map(|agent| agent.clone_for_binding())
             .ok_or_else(|| {
@@ -86,8 +88,16 @@ impl UnityBinding {
     /// * `id` - Agent unique identifier
     /// * `agent` - Agent to register
     pub fn register_agent(&self, id: Uuid, agent: Agent) {
-        let mut agents = self.agents.lock().unwrap();
-        agents.insert(id.to_string(), agent);
+        match self.agents.lock() {
+            Ok(mut agents) => {
+                agents.insert(id.to_string(), agent);
+            }
+            Err(poisoned) => {
+                log::warn!("Agents mutex was poisoned, recovering and continuing");
+                let mut agents = poisoned.into_inner();
+                agents.insert(id.to_string(), agent);
+            }
+        }
     }
     
     /// Convert Unity context to Oxyde context
@@ -140,15 +150,17 @@ impl EngineBinding for UnityBinding {
     
     fn update_agent(&self, agent: &Agent, context_json: &str) -> Result<()> {
         let context = self.parse_unity_context(context_json)?;
-        
+
         // Get a new copy of the agent from the registry
         let agent_id = agent.id();
-        let agents = self.agents.lock().unwrap();
+        let agents = self.agents.lock().map_err(|e| {
+            OxydeError::BindingError(format!("Failed to lock agents mutex: {}", e))
+        })?;
         if let Some(stored_agent) = agents.get(&agent_id.to_string()) {
             // Use a cloned reference of the stored agent
             let agent_ref = stored_agent.clone_for_binding();
             drop(agents); // Release the lock
-            
+
             tokio::spawn(async move {
                 agent_ref.update_context(context).await;
             });
@@ -187,7 +199,8 @@ pub mod ffi {
             if BINDING.is_none() {
                 BINDING = Some(UnityBinding::new());
             }
-            BINDING.as_ref().unwrap()
+            // Safe because we just initialized it above if it was None
+            BINDING.as_ref().expect("Unity binding initialization failed")
         }
     }
     
@@ -207,7 +220,10 @@ pub mod ffi {
         match binding.create_agent(&config_path_str) {
             Ok(agent) => {
                 let agent_id = agent.id().to_string();
-                CString::new(agent_id).unwrap().into_raw()
+                // CString::new can only fail if the string contains null bytes, which UUID strings never do
+                CString::new(agent_id)
+                    .expect("Agent ID should not contain null bytes")
+                    .into_raw()
             },
             Err(_) => std::ptr::null_mut(),
         }

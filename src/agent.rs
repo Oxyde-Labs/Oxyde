@@ -303,7 +303,11 @@ impl Agent {
     where
         F: Fn(&Agent, &str) + Send + Sync + 'static,
     {
-        let mut callbacks = self.callbacks.lock().unwrap();
+        // Lock the callbacks mutex, recovering from poison if necessary
+        let mut callbacks = self.callbacks.lock().unwrap_or_else(|poisoned| {
+            log::warn!("Callback mutex was poisoned, recovering");
+            poisoned.into_inner()
+        });
         let event_callbacks = callbacks.entry(event.to_string()).or_insert(Vec::new());
         event_callbacks.push(CallbackWrapper::new(Box::new(callback)));
     }
@@ -315,7 +319,11 @@ impl Agent {
     /// * `event` - Event name
     /// * `data` - Event data
     async fn trigger_callback(&self, event: &str, data: &str) {
-        let callbacks = self.callbacks.lock().unwrap();
+        // Lock the callbacks mutex, recovering from poison if necessary
+        let callbacks = self.callbacks.lock().unwrap_or_else(|poisoned| {
+            log::warn!("Callback mutex was poisoned during trigger, recovering");
+            poisoned.into_inner()
+        });
         if let Some(event_callbacks) = callbacks.get(event) {
             for callback in event_callbacks {
                 callback.call(self, data);
@@ -335,13 +343,17 @@ impl Agent {
 
 impl std::fmt::Debug for Agent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let callbacks_count = self.callbacks.lock()
+            .map(|cb| cb.len())
+            .unwrap_or(0);
+
         f.debug_struct("Agent")
             .field("id", &self.id)
             .field("name", &self.name)
             .field("config", &self.config)
             // Don't debug the behaviors or callbacks directly as they don't implement Debug
             .field("behaviors_count", &format!("<{} behaviors>", self.behaviors.try_read().map(|b| b.len()).unwrap_or(0)))
-            .field("callbacks_count", &format!("<{} callback types>", self.callbacks.lock().unwrap().len()))
+            .field("callbacks_count", &format!("<{} callback types>", callbacks_count))
             .finish()
     }
 }
