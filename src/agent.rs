@@ -146,6 +146,16 @@ impl Agent {
         behaviors.push(Box::new(behavior));
     }
 
+    /// Add a boxed behavior to the agent
+    ///
+    /// # Arguments
+    ///
+    /// * `behavior` - A boxed behavior to add to the agent
+    pub async fn add_boxed_behavior(&self, behavior: Box<dyn Behavior>) {
+        let mut behaviors = self.behaviors.write().await;
+        behaviors.push(behavior);
+    }
+
     /// Update the agent's context with new data
     ///
     /// # Arguments
@@ -346,10 +356,7 @@ pub struct AgentBuilder {
 impl AgentBuilder {
     /// Create a new AgentBuilder
     pub fn new() -> Self {
-        Self {
-            config: None,
-            behaviors: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Set the agent configuration
@@ -372,12 +379,9 @@ impl AgentBuilder {
 
         let agent = Agent::new(config);
 
-        for _behavior_box in self.behaviors {
-            // Unbox the behavior - in a real implementation we'd need type checking
-            // but for now we'll create a simple dummy behavior to get it to compile
-            use crate::oxyde_game::behavior::GreetingBehavior;
-            let dummy_behavior = GreetingBehavior::new("Hello there!");
-            agent.add_behavior(dummy_behavior).await;
+        // Add all behaviors provided via the builder
+        for behavior in self.behaviors {
+            agent.add_boxed_behavior(behavior).await;
         }
 
         Ok(agent)
@@ -411,5 +415,60 @@ mod tests {
 
         agent.stop().await.unwrap();
         assert_eq!(agent.state().await, AgentState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn test_agent_builder_with_behaviors() {
+        use crate::oxyde_game::behavior::GreetingBehavior;
+
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Builder Test".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec!["Built with builder".to_string()],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+        };
+
+        // Create agent with builder and add behaviors
+        let greeting1 = GreetingBehavior::new("Hello!");
+        let greeting2 = GreetingBehavior::new("Greetings!");
+
+        let agent = AgentBuilder::new()
+            .with_config(config)
+            .with_behavior(greeting1)
+            .with_behavior(greeting2)
+            .build()
+            .await
+            .unwrap();
+
+        assert_eq!(agent.name(), "Builder Test");
+
+        // Verify behaviors were added (check the count)
+        let behaviors = agent.behaviors.read().await;
+        assert_eq!(behaviors.len(), 2, "Builder should add all provided behaviors");
+    }
+
+    #[tokio::test]
+    async fn test_agent_builder_without_config_fails() {
+        use crate::oxyde_game::behavior::GreetingBehavior;
+
+        let greeting = GreetingBehavior::new("Hello!");
+
+        // Attempt to build without config should fail
+        let result = AgentBuilder::new()
+            .with_behavior(greeting)
+            .build()
+            .await;
+
+        assert!(result.is_err(), "Building without config should fail");
+        if let Err(crate::OxydeError::ConfigurationError(msg)) = result {
+            assert!(msg.contains("required"), "Error should mention config is required");
+        } else {
+            panic!("Expected ConfigurationError");
+        }
     }
 }
