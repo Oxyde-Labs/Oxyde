@@ -61,6 +61,56 @@ pub enum AgentState {
     Error,
 }
 
+/// Agent event types for callbacks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentEvent {
+    /// Agent has started
+    Start,
+    /// Agent has stopped
+    Stop,
+    /// Agent is performing an action
+    Action,
+    /// Agent has generated a response
+    Response,
+    /// Agent state has changed
+    StateChange,
+    /// Agent encountered an error
+    Error,
+}
+
+impl AgentEvent {
+    /// Convert to string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Action => "action",
+            Self::Response => "response",
+            Self::StateChange => "state_change",
+            Self::Error => "error",
+        }
+    }
+
+    /// Convert from string representation
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "start" => Some(Self::Start),
+            "stop" => Some(Self::Stop),
+            "action" => Some(Self::Action),
+            "response" => Some(Self::Response),
+            "state_change" | "statechange" => Some(Self::StateChange),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for AgentEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Context data for an agent
 pub type AgentContext = HashMap<String, serde_json::Value>;
 
@@ -184,7 +234,7 @@ impl Agent {
             None
         )).await?;
 
-        self.trigger_callback("start", "Agent started").await;
+        self.trigger_event(AgentEvent::Start, "Agent started").await;
 
         Ok(())
     }
@@ -195,7 +245,7 @@ impl Agent {
         *state = AgentState::Stopped;
         log::info!("Agent {} stopped", self.name);
 
-        self.trigger_callback("stop", "Agent stopped").await;
+        self.trigger_event(AgentEvent::Stop, "Agent stopped").await;
 
         Ok(())
     }
@@ -250,7 +300,7 @@ impl Agent {
                     },
                     BehaviorResult::Action(action) => {
                         // Trigger action callback
-                        self.trigger_callback("action", &action).await;
+                        self.trigger_event(AgentEvent::Action, &action).await;
                     },
                     BehaviorResult::None => {
                         // Continue to next behavior
@@ -288,17 +338,39 @@ impl Agent {
         }
 
         // Trigger response callback
-        self.trigger_callback("response", &response).await;
+        self.trigger_event(AgentEvent::Response, &response).await;
 
         Ok(response)
     }
 
-    /// Register a callback for agent events
+    /// Register a callback for agent events using typed events
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Event type to trigger the callback
+    /// * `callback` - Callback function
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// agent.on_event(AgentEvent::Start, |agent, data| {
+    ///     println!("Agent {} started: {}", agent.name(), data);
+    /// });
+    /// ```
+    pub fn on_event<F>(&self, event: AgentEvent, callback: F)
+    where
+        F: Fn(&Agent, &str) + Send + Sync + 'static,
+    {
+        self.register_callback(event.as_str(), callback);
+    }
+
+    /// Register a callback for agent events (deprecated, use on_event)
     ///
     /// # Arguments
     ///
     /// * `event` - Event name to trigger the callback
     /// * `callback` - Callback function
+    #[deprecated(since = "0.1.5", note = "Use on_event() with AgentEvent enum instead")]
     pub fn register_callback<F>(&self, event: &str, callback: F)
     where
         F: Fn(&Agent, &str) + Send + Sync + 'static,
@@ -310,6 +382,16 @@ impl Agent {
         });
         let event_callbacks = callbacks.entry(event.to_string()).or_insert(Vec::new());
         event_callbacks.push(CallbackWrapper::new(Box::new(callback)));
+    }
+
+    /// Trigger a callback for a typed event
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Event type
+    /// * `data` - Event data
+    async fn trigger_event(&self, event: AgentEvent, data: &str) {
+        self.trigger_callback(event.as_str(), data).await;
     }
 
     /// Trigger a callback for an event

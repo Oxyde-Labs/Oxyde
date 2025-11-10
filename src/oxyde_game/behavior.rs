@@ -256,13 +256,15 @@ impl GreetingBehavior {
 #[async_trait]
 impl Behavior for GreetingBehavior {
     async fn matches_intent(&self, intent: &Intent) -> bool {
+        use crate::oxyde_game::intent::IntentType;
+
         // Check if on cooldown
         if self.base.is_on_cooldown().await {
             return false;
         }
-        
+
         // Check if player is close enough
-        intent.intent_type == "proximity" || intent.intent_type == "greeting"
+        intent.intent_type == IntentType::Proximity || intent.intent_type == IntentType::Greeting
     }
     
     async fn execute(&self, _intent: &Intent, context: &AgentContext) -> Result<BehaviorResult> {
@@ -343,10 +345,12 @@ impl DialogueBehavior {
 #[async_trait]
 impl Behavior for DialogueBehavior {
     async fn matches_intent(&self, intent: &Intent) -> bool {
+        use crate::oxyde_game::intent::IntentType;
+
         // Match dialogue-related intents
-        intent.intent_type == "question" || 
-        intent.intent_type == "chat" || 
-        intent.intent_type == "greeting"
+        intent.intent_type == IntentType::Question ||
+        intent.intent_type == IntentType::Chat ||
+        intent.intent_type == IntentType::Greeting
     }
     
     async fn execute(&self, intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
@@ -462,23 +466,25 @@ impl Behavior for PathfindingBehavior {
         if !self.follow_player {
             return false;
         }
-        
-        intent.intent_type == "movement" || 
-        intent.intent_type == "follow" ||
-        (intent.intent_type == "command" && intent.keywords.contains(&"follow".to_string()))
+        use crate::oxyde_game::intent::IntentType;
+
+        intent.intent_type == IntentType::Custom || // movement/follow are custom types
+        (intent.intent_type == IntentType::Command && intent.keywords.contains(&"follow".to_string()))
     }
-    
+
     async fn execute(&self, intent: &Intent, context: &AgentContext) -> Result<BehaviorResult> {
+        use crate::oxyde_game::intent::IntentType;
+
         if !self.follow_player {
             return Ok(BehaviorResult::None);
         }
-        
+
         // Extract player position from context
         let player_x = context.get("player_x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
         let player_y = context.get("player_y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-        
+
         // Check if we should start following
-        if intent.intent_type == "command" && intent.keywords.contains(&"follow".to_string()) {
+        if intent.intent_type == IntentType::Command && intent.keywords.contains(&"follow".to_string()) {
             // Send action to start following
             return Ok(BehaviorResult::Action(format!(
                 "follow|{:.2}|{:.2}|{:.2}",
@@ -571,18 +577,20 @@ mod tests {
     
     #[tokio::test]
     async fn test_greeting_behavior() {
+        use crate::oxyde_game::intent::IntentType;
+
         let intent = Intent {
-            intent_type: "proximity".to_string(),
+            intent_type: IntentType::Proximity,
             confidence: 1.0,
             raw_input: "".to_string(),
             keywords: vec![],
         };
-        
+
         let mut context = HashMap::new();
         context.insert("player_distance".to_string(), serde_json::json!(2.0));
-        
+
         let behavior = GreetingBehavior::new_default();
-        
+
         assert!(behavior.matches_intent(&intent).await);
         
         let result = behavior.execute(&intent, &context).await.unwrap();
