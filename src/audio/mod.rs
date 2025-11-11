@@ -80,13 +80,13 @@ pub struct TTSConfig {
     /// Default voice settings for TTS synthesis.
     /// These settings define the characteristics of the voice used for synthesis.
     pub voice_speed: f32,
-    
+
     /// Default voice volume for TTS synthesis.
     pub voice_pitch: f32,
 
     /// Default voice volume for TTS synthesis.
     pub enable_ssml: bool,
-    
+
     /// The output audio format for TTS synthesis.
     pub output_format: AudioFormat,
 }
@@ -97,7 +97,7 @@ pub struct TTSConfig {
 /// Currently, only MP3 is supported. can update this to support more formats in the future.
 pub enum AudioFormat {
     /// MP3 audio format.
-    MP3
+    MP3,
 }
 
 impl TTSService {
@@ -144,9 +144,12 @@ impl TTSService {
         };
 
         // Generate speech with ElevenLabs
-        let audio_data = self
-            .elevenlabs_synthesize(&enhanced_text, &voice_settings)
-            .await?;
+        let audio_data = match self.provider {
+            TTSProvider::ElevenLabs => {
+                self.elevenlabs_synthesize(&enhanced_text, &voice_settings)
+                    .await?
+            }
+        };
 
         // Cache the result
         if self.config.cache_enabled {
@@ -296,17 +299,13 @@ impl TTSService {
 
         let status = response.status();
         let headers = response.headers().clone();
-        let audio_bytes = response
-            .bytes()
-            .await
-            .map_err(|e| TTSError::Network(e))?;
+        let audio_bytes = response.bytes().await.map_err(|e| TTSError::Network(e))?;
 
         if !status.is_success() {
             let error_text = String::from_utf8_lossy(&audio_bytes);
             return Err(TTSError::ApiError(format!(
                 "ElevenLabs API error ({}): {}",
-                status,
-                error_text
+                status, error_text
             )));
         }
 
@@ -356,7 +355,6 @@ impl TTSService {
             duration_ms: self.estimate_duration(text),
         })
     }
-
 
     fn estimate_duration(&self, text: &str) -> u32 {
         // Rough estimate: ~150 words per minute average speaking rate
