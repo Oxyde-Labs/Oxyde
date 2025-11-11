@@ -15,9 +15,18 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[cfg(feature = "vector-memory")]
+use std::sync::Arc;
+
+#[cfg(feature = "vector-memory")]
+use tokio::sync::OnceCell;
+
+#[cfg(feature = "vector-memory")]
 use hnswlib::Hnsw;
 
-use crate::config::{EmbeddingModelType, MemoryConfig};
+use crate::config::MemoryConfig;
+
+#[cfg(feature = "vector-memory")]
+use crate::config::EmbeddingModelType;
 use crate::{OxydeError, Result};
 
 /// Embedding model for vector representations of text
@@ -338,17 +347,25 @@ impl Ord for Memory {
 }
 
 /// Memory system for storing and retrieving agent memories
-#[derive(Debug)]
 pub struct MemorySystem {
     /// Configuration for the memory system
     config: MemoryConfig,
-    
+
     /// Stored memories - includes both short-term and long-term
     memories: RwLock<Vec<Memory>>,
-    
-    /// Embedding model for vector-based memory retrieval
+
+    /// Embedding model for vector-based memory retrieval (lazily initialized)
     #[cfg(feature = "vector-memory")]
-    embedding_model: Option<Arc<RwLock<dyn EmbeddingModel + Send + Sync>>>,
+    embedding_model: OnceCell<Arc<RwLock<dyn EmbeddingModel + Send + Sync>>>,
+}
+
+impl std::fmt::Debug for MemorySystem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemorySystem")
+            .field("config", &self.config)
+            .field("memories", &"<RwLock<Vec<Memory>>>")
+            .finish()
+    }
 }
 
 impl MemorySystem {
@@ -363,19 +380,12 @@ impl MemorySystem {
     /// A new MemorySystem instance
     pub fn new(config: MemoryConfig) -> Self {
         #[cfg(feature = "vector-memory")]
-        let embedding_model = if config.use_embeddings {
-            None // Will be initialized lazily when needed
-        } else {
-            None
-        };
-        
-        #[cfg(feature = "vector-memory")]
         return Self {
             config,
             memories: RwLock::new(Vec::new()),
-            embedding_model,
+            embedding_model: OnceCell::new(),
         };
-        
+
         #[cfg(not(feature = "vector-memory"))]
         return Self {
             config,
@@ -388,44 +398,39 @@ impl MemorySystem {
     /// This is called lazily the first time vector embeddings are needed.
     #[cfg(feature = "vector-memory")]
     async fn ensure_embedding_model(&self) -> Result<()> {
-        if self.config.use_embeddings {
-            let mut model_opt = None;
-            
-            if let Some(model) = &self.embedding_model {
-                // Model already initialized
-                return Ok(());
-            }
-            
-            // Initialize the appropriate model based on configuration
-            match self.config.embedding_model {
-                EmbeddingModelType::MiniBert => {
-                    let model = MiniLMEmbedding::new()?;
-                    model_opt = Some(Arc::new(RwLock::new(model)) as Arc<RwLock<dyn EmbeddingModel + Send + Sync>>);
-                },
-                EmbeddingModelType::DistilBert => {
-                    // Could implement other models here
-                    return Err(OxydeError::MemoryError("DistilBert model not yet implemented".to_string()));
-                },
-                EmbeddingModelType::Custom => {
-                    if let Some(path) = &self.config.custom_model_path {
-                        // Custom model loading would go here
-                        return Err(OxydeError::MemoryError("Custom models not yet supported".to_string()));
-                    } else {
-                        return Err(OxydeError::MemoryError("Custom model path not specified".to_string()));
+        if !self.config.use_embeddings {
+            return Ok(());
+        }
+
+        // Use OnceCell to safely initialize the model exactly once
+        self.embedding_model
+            .get_or_try_init(|| async {
+                // Initialize the appropriate model based on configuration
+                match self.config.embedding_model {
+                    EmbeddingModelType::MiniBert => {
+                        let model = MiniLMEmbedding::new()?;
+                        Ok(Arc::new(RwLock::new(model)) as Arc<RwLock<dyn EmbeddingModel + Send + Sync>>)
+                    }
+                    EmbeddingModelType::DistilBert => {
+                        Err(OxydeError::MemoryError(
+                            "DistilBert model not yet implemented".to_string(),
+                        ))
+                    }
+                    EmbeddingModelType::Custom => {
+                        if self.config.custom_model_path.is_some() {
+                            Err(OxydeError::MemoryError(
+                                "Custom models not yet supported".to_string(),
+                            ))
+                        } else {
+                            Err(OxydeError::MemoryError(
+                                "Custom model path not specified".to_string(),
+                            ))
+                        }
                     }
                 }
-            }
-            
-            // Update the model
-            if let Some(model) = model_opt {
-                let mut embed_model = unsafe {
-                    // This is safe because we're replacing Option<T> with Some(T)
-                    &mut *(&self.embedding_model as *const _ as *mut Option<Arc<RwLock<dyn EmbeddingModel + Send + Sync>>>)
-                };
-                *embed_model = Some(model);
-            }
-        }
-        
+            })
+            .await?;
+
         Ok(())
     }
     
@@ -434,11 +439,12 @@ impl MemorySystem {
         if !self.config.use_embeddings {
             return Ok(None);
         }
-        
+
         // Ensure model is initialized
         self.ensure_embedding_model().await?;
-        
-        if let Some(model) = &self.embedding_model {
+
+        // Get the initialized model from OnceCell
+        if let Some(model) = self.embedding_model.get() {
             let model = model.read().await;
             let embedding = model.embed(text)?;
             Ok(Some(embedding))
@@ -456,7 +462,7 @@ impl MemorySystem {
     /// # Returns
     ///
     /// Success or error
-    pub async fn add(&self, memory: Memory) -> Result<()> {
+    pub async fn add(&self, #[cfg_attr(not(feature = "vector-memory"), allow(unused_mut))] mut memory: Memory) -> Result<()> {
         // Generate embedding for the memory if vector embeddings are enabled
         #[cfg(feature = "vector-memory")]
         if self.config.use_embeddings && memory.embedding.is_none() {
@@ -464,7 +470,7 @@ impl MemorySystem {
                 memory.embedding = Some(embedding);
             }
         }
-        
+
         let mut memories = self.memories.write().await;
         
         // Check if we need to remove a memory to stay under capacity
@@ -838,6 +844,8 @@ mod tests {
     
     #[tokio::test]
     async fn test_memory_system() {
+        use crate::config::EmbeddingModelType;
+
         let config = MemoryConfig {
             capacity: 3,
             persistence: false,
@@ -850,7 +858,7 @@ mod tests {
             embedding_dimension: 384,
             priority_categories: Vec::new(),
         };
-        
+
         let system = MemorySystem::new(config);
         
         // Add memories

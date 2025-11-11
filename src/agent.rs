@@ -62,6 +62,56 @@ pub enum AgentState {
     Error,
 }
 
+/// Agent event types for callbacks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentEvent {
+    /// Agent has started
+    Start,
+    /// Agent has stopped
+    Stop,
+    /// Agent is performing an action
+    Action,
+    /// Agent has generated a response
+    Response,
+    /// Agent state has changed
+    StateChange,
+    /// Agent encountered an error
+    Error,
+}
+
+impl AgentEvent {
+    /// Convert to string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Action => "action",
+            Self::Response => "response",
+            Self::StateChange => "state_change",
+            Self::Error => "error",
+        }
+    }
+
+    /// Convert from string representation
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "start" => Some(Self::Start),
+            "stop" => Some(Self::Stop),
+            "action" => Some(Self::Action),
+            "response" => Some(Self::Response),
+            "state_change" | "statechange" => Some(Self::StateChange),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for AgentEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Context data for an agent
 pub type AgentContext = HashMap<String, serde_json::Value>;
 
@@ -198,6 +248,16 @@ impl Agent {
         behaviors.push(Box::new(behavior));
     }
 
+    /// Add a boxed behavior to the agent
+    ///
+    /// # Arguments
+    ///
+    /// * `behavior` - A boxed behavior to add to the agent
+    pub async fn add_boxed_behavior(&self, behavior: Box<dyn Behavior>) {
+        let mut behaviors = self.behaviors.write().await;
+        behaviors.push(behavior);
+    }
+
     /// Update the agent's context with new data
     ///
     /// # Arguments
@@ -228,7 +288,7 @@ impl Agent {
             ))
             .await?;
 
-        self.trigger_callback("start", "Agent started").await;
+        self.trigger_event(AgentEvent::Start, "Agent started").await;
 
         Ok(())
     }
@@ -239,7 +299,7 @@ impl Agent {
         *state = AgentState::Stopped;
         log::info!("Agent {} stopped", self.name);
 
-        self.trigger_callback("stop", "Agent stopped").await;
+        self.trigger_event(AgentEvent::Stop, "Agent stopped").await;
 
         Ok(())
     }
@@ -291,8 +351,8 @@ impl Agent {
                     }
                     BehaviorResult::Action(action) => {
                         // Trigger action callback
-                        self.trigger_callback("action", &action).await;
-                    }
+                        self.trigger_event(AgentEvent::Action, &action).await;
+                    },
                     BehaviorResult::None => {
                         // Continue to next behavior
                     }
@@ -329,24 +389,60 @@ impl Agent {
         }
 
         // Trigger response callback
-        self.trigger_callback("response", &response).await;
+        self.trigger_event(AgentEvent::Response, &response).await;
 
         Ok(response)
     }
 
-    /// Register a callback for agent events
+    /// Register a callback for agent events using typed events
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Event type to trigger the callback
+    /// * `callback` - Callback function
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// agent.on_event(AgentEvent::Start, |agent, data| {
+    ///     println!("Agent {} started: {}", agent.name(), data);
+    /// });
+    /// ```
+    pub fn on_event<F>(&self, event: AgentEvent, callback: F)
+    where
+        F: Fn(&Agent, &str) + Send + Sync + 'static,
+    {
+        self.register_callback(event.as_str(), callback);
+    }
+
+    /// Register a callback for agent events (deprecated, use on_event)
     ///
     /// # Arguments
     ///
     /// * `event` - Event name to trigger the callback
     /// * `callback` - Callback function
+    #[deprecated(since = "0.1.5", note = "Use on_event() with AgentEvent enum instead")]
     pub fn register_callback<F>(&self, event: &str, callback: F)
     where
         F: Fn(&Agent, &str) + Send + Sync + 'static,
     {
-        let mut callbacks = self.callbacks.lock().unwrap();
+        // Lock the callbacks mutex, recovering from poison if necessary
+        let mut callbacks = self.callbacks.lock().unwrap_or_else(|poisoned| {
+            log::warn!("Callback mutex was poisoned, recovering");
+            poisoned.into_inner()
+        });
         let event_callbacks = callbacks.entry(event.to_string()).or_insert(Vec::new());
         event_callbacks.push(CallbackWrapper::new(Box::new(callback)));
+    }
+
+    /// Trigger a callback for a typed event
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Event type
+    /// * `data` - Event data
+    async fn trigger_event(&self, event: AgentEvent, data: &str) {
+        self.trigger_callback(event.as_str(), data).await;
     }
 
     /// Trigger a callback for an event
@@ -356,7 +452,11 @@ impl Agent {
     /// * `event` - Event name
     /// * `data` - Event data
     async fn trigger_callback(&self, event: &str, data: &str) {
-        let callbacks = self.callbacks.lock().unwrap();
+        // Lock the callbacks mutex, recovering from poison if necessary
+        let callbacks = self.callbacks.lock().unwrap_or_else(|poisoned| {
+            log::warn!("Callback mutex was poisoned during trigger, recovering");
+            poisoned.into_inner()
+        });
         if let Some(event_callbacks) = callbacks.get(event) {
             for callback in event_callbacks {
                 callback.call(self, data);
@@ -376,22 +476,17 @@ impl Agent {
 
 impl std::fmt::Debug for Agent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let callbacks_count = self.callbacks.lock()
+            .map(|cb| cb.len())
+            .unwrap_or(0);
+
         f.debug_struct("Agent")
             .field("id", &self.id)
             .field("name", &self.name)
             .field("config", &self.config)
             // Don't debug the behaviors or callbacks directly as they don't implement Debug
-            .field(
-                "behaviors_count",
-                &format!(
-                    "<{} behaviors>",
-                    self.behaviors.try_read().map(|b| b.len()).unwrap_or(0)
-                ),
-            )
-            .field(
-                "callbacks_count",
-                &format!("<{} callback types>", self.callbacks.lock().unwrap().len()),
-            )
+            .field("behaviors_count", &format!("<{} behaviors>", self.behaviors.try_read().map(|b| b.len()).unwrap_or(0)))
+            .field("callbacks_count", &format!("<{} callback types>", callbacks_count))
             .finish()
     }
 }
@@ -406,10 +501,7 @@ pub struct AgentBuilder {
 impl AgentBuilder {
     /// Create a new AgentBuilder
     pub fn new() -> Self {
-        Self {
-            config: None,
-            behaviors: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Set the agent configuration
@@ -432,12 +524,9 @@ impl AgentBuilder {
 
         let agent = Agent::new(config);
 
-        for behavior_box in self.behaviors {
-            // Unbox the behavior - in a real implementation we'd need type checking
-            // but for now we'll create a simple dummy behavior to get it to compile
-            use crate::oxyde_game::behavior::GreetingBehavior;
-            let dummy_behavior = GreetingBehavior::new("Hello there!");
-            agent.add_behavior(dummy_behavior).await;
+        // Add all behaviors provided via the builder
+        for behavior in self.behaviors {
+            agent.add_boxed_behavior(behavior).await;
         }
 
         Ok(agent)
@@ -472,5 +561,61 @@ mod tests {
 
         agent.stop().await.unwrap();
         assert_eq!(agent.state().await, AgentState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn test_agent_builder_with_behaviors() {
+        use crate::oxyde_game::behavior::GreetingBehavior;
+
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Builder Test".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec!["Built with builder".to_string()],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+            tts: None, // No TTS for this test
+        };
+
+        // Create agent with builder and add behaviors
+        let greeting1 = GreetingBehavior::new("Hello!");
+        let greeting2 = GreetingBehavior::new("Greetings!");
+
+        let agent = AgentBuilder::new()
+            .with_config(config)
+            .with_behavior(greeting1)
+            .with_behavior(greeting2)
+            .build()
+            .await
+            .unwrap();
+
+        assert_eq!(agent.name(), "Builder Test");
+
+        // Verify behaviors were added (check the count)
+        let behaviors = agent.behaviors.read().await;
+        assert_eq!(behaviors.len(), 2, "Builder should add all provided behaviors");
+    }
+
+    #[tokio::test]
+    async fn test_agent_builder_without_config_fails() {
+        use crate::oxyde_game::behavior::GreetingBehavior;
+
+        let greeting = GreetingBehavior::new("Hello!");
+
+        // Attempt to build without config should fail
+        let result = AgentBuilder::new()
+            .with_behavior(greeting)
+            .build()
+            .await;
+
+        assert!(result.is_err(), "Building without config should fail");
+        if let Err(crate::OxydeError::ConfigurationError(msg)) = result {
+            assert!(msg.contains("required"), "Error should mention config is required");
+        } else {
+            panic!("Expected ConfigurationError");
+        }
     }
 }

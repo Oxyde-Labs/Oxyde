@@ -359,6 +359,7 @@ impl GoalEngine {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_recent_events(&self, limit: usize) -> Vec<&StoryEvent> {
         self.world_events
             .iter()
@@ -367,6 +368,7 @@ impl GoalEngine {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn complete_goal(&mut self, npc_id: &str, goal_id: &str) -> bool {
         let goal_type = {
             if let Some(goals) = self.npc_goals.get_mut(npc_id) {
@@ -396,6 +398,7 @@ impl GoalEngine {
         }
     }
 
+    #[allow(dead_code)]
     fn generate_new_goal(&mut self, npc_id: &str, completed_goal_type: &GoalType) {
         let new_goal = match completed_goal_type {
             GoalType::Economic => Goal::new(

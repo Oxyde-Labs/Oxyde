@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct OpenAIRequest {
     model: String,
@@ -15,16 +15,19 @@ struct OpenAIMessage {
     content: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct OpenAIResponse {
     choices: Vec<OpenAIChoice>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct OpenAIChoice {
     message: OpenAIMessage,
 }
 
+#[allow(dead_code)]
 pub struct OpenAIService {
     api_key: String,
     client: reqwest::Client,
@@ -41,6 +44,7 @@ impl OpenAIService {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn generate_npc_response(
         &self,
         npc_name: &str,
@@ -106,6 +110,7 @@ impl OpenAIService {
             .clone())
     }
 
+    #[allow(dead_code)]
     fn get_npc_personality(&self, role: &str) -> &str {
         match role.to_lowercase().as_str() {
             "merchant" => "You're friendly and business-minded, always looking to make a deal. You know about valuable items and trade routes.",

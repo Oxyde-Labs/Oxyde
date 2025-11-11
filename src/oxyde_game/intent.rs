@@ -9,18 +9,68 @@ use serde::{Deserialize, Serialize};
 
 use crate::{OxydeError, Result};
 
+/// Type of player intent
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IntentType {
+    /// Player is asking a question
+    Question,
+    /// Player is greeting the NPC
+    Greeting,
+    /// Player is issuing a command
+    Command,
+    /// General chat/conversation
+    Chat,
+    /// Proximity-based intent (player approaching/nearby)
+    Proximity,
+    /// Custom/unknown intent type
+    Custom,
+}
+
+impl IntentType {
+    /// Convert from string representation
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "question" => Self::Question,
+            "greeting" => Self::Greeting,
+            "command" => Self::Command,
+            "chat" => Self::Chat,
+            "proximity" => Self::Proximity,
+            _ => Self::Custom,
+        }
+    }
+
+    /// Convert to string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Question => "question",
+            Self::Greeting => "greeting",
+            Self::Command => "command",
+            Self::Chat => "chat",
+            Self::Proximity => "proximity",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl std::fmt::Display for IntentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Intent represents the player's intended action or request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
-    /// Type of intent (e.g., "question", "greeting", "command")
-    pub intent_type: String,
-    
+    /// Type of intent
+    pub intent_type: IntentType,
+
     /// Confidence score for the intent classification (0.0 - 1.0)
     pub confidence: f64,
-    
+
     /// Raw input from the player
     pub raw_input: String,
-    
+
     /// Keywords extracted from the input
     pub keywords: Vec<String>,
 }
@@ -39,13 +89,13 @@ impl Intent {
     ///
     /// A new Intent instance
     pub fn new(
-        intent_type: &str,
+        intent_type: IntentType,
         confidence: f64,
         raw_input: &str,
         keywords: Vec<String>,
     ) -> Self {
         Self {
-            intent_type: intent_type.to_string(),
+            intent_type,
             confidence: confidence.clamp(0.0, 1.0),
             raw_input: raw_input.to_string(),
             keywords,
@@ -63,7 +113,7 @@ impl Intent {
     /// A proximity Intent
     pub fn proximity(distance: f32) -> Self {
         Self::new(
-            "proximity",
+            IntentType::Proximity,
             1.0,
             "",
             vec![format!("distance:{}", distance)],
@@ -82,18 +132,18 @@ impl Intent {
     pub fn from_chat(text: &str) -> Self {
         // Extract keywords from the text
         let keywords = Self::extract_keywords(text);
-        
+
         // Determine intent type
         let intent_type = if text.ends_with("?") {
-            "question"
+            IntentType::Question
         } else if Self::is_greeting(text) {
-            "greeting"
+            IntentType::Greeting
         } else if Self::is_command(text) {
-            "command"
+            IntentType::Command
         } else {
-            "chat"
+            IntentType::Chat
         };
-        
+
         Self::new(
             intent_type,
             0.8, // Confidence score
@@ -216,16 +266,16 @@ mod tests {
     #[test]
     fn test_intent_from_chat() {
         let greeting = Intent::from_chat("Hello there!");
-        assert_eq!(greeting.intent_type, "greeting");
-        
+        assert_eq!(greeting.intent_type, IntentType::Greeting);
+
         let question = Intent::from_chat("What is your name?");
-        assert_eq!(question.intent_type, "question");
-        
+        assert_eq!(question.intent_type, IntentType::Question);
+
         let command = Intent::from_chat("follow me");
-        assert_eq!(command.intent_type, "command");
-        
+        assert_eq!(command.intent_type, IntentType::Command);
+
         let chat = Intent::from_chat("I like this village.");
-        assert_eq!(chat.intent_type, "chat");
+        assert_eq!(chat.intent_type, IntentType::Chat);
     }
     
     #[test]
