@@ -65,4 +65,4 @@ rpath = false      # Disable runtime path
 strip = true       # Strip symbols from binary
 
 [workspace]
-members = ["tools", "examples/rpg_demo"]
+members = ["tools", "examples/rpg_demo", "examples/tts_demo"]
