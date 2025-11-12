@@ -8,8 +8,79 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::agent::AgentContext;
+use crate::oxyde_game::emotion::EmotionalState;
 use crate::oxyde_game::intent::Intent;
 use crate::Result;
+
+/// Emotional trigger condition for behaviors
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EmotionTrigger {
+    /// Trigger when any emotion exceeds threshold
+    AnyEmotion { min_intensity: f32 },
+
+    /// Trigger when specific emotion exceeds threshold
+    SpecificEmotion { emotion: String, min_value: f32 },
+
+    /// Trigger when valence is in range
+    ValenceRange { min: f32, max: f32 },
+
+    /// Trigger when arousal exceeds threshold
+    HighArousal { min_arousal: f32 },
+
+    /// Trigger when in positive emotional state
+    Positive,
+
+    /// Trigger when in negative emotional state
+    Negative,
+
+    /// No emotional trigger (always passes)
+    None,
+}
+
+impl EmotionTrigger {
+    /// Check if the emotional state satisfies this trigger
+    pub fn matches(&self, state: &EmotionalState) -> bool {
+        match self {
+            EmotionTrigger::AnyEmotion { min_intensity } => {
+                state.arousal() >= *min_intensity
+            }
+            EmotionTrigger::SpecificEmotion { emotion, min_value } => {
+                let (dominant, value) = state.dominant_emotion();
+                dominant == emotion && value >= *min_value
+            }
+            EmotionTrigger::ValenceRange { min, max } => {
+                let valence = state.valence();
+                valence >= *min && valence <= *max
+            }
+            EmotionTrigger::HighArousal { min_arousal } => {
+                state.arousal() >= *min_arousal
+            }
+            EmotionTrigger::Positive => state.is_positive(),
+            EmotionTrigger::Negative => state.is_negative(),
+            EmotionTrigger::None => true,
+        }
+    }
+}
+
+/// Emotional influence that a behavior has when executed
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmotionInfluence {
+    /// Emotion to modify
+    pub emotion: String,
+
+    /// Delta to apply (-1.0 to 1.0)
+    pub delta: f32,
+}
+
+impl EmotionInfluence {
+    /// Create a new emotion influence
+    pub fn new(emotion: &str, delta: f32) -> Self {
+        Self {
+            emotion: emotion.to_string(),
+            delta: delta.clamp(-1.0, 1.0),
+        }
+    }
+}
 
 /// Result of executing a behavior
 #[derive(Debug, Clone)]
@@ -49,6 +120,57 @@ pub trait Behavior: Send + Sync + std::fmt::Debug {
     ///
     /// Result of executing the behavior
     async fn execute(&self, intent: &Intent, context: &AgentContext) -> Result<BehaviorResult>;
+
+    /// Get the emotional trigger for this behavior (optional)
+    ///
+    /// Behaviors can override this to specify when they should trigger
+    /// based on the agent's emotional state.
+    ///
+    /// # Returns
+    ///
+    /// Emotion trigger condition, or None to always trigger
+    fn emotion_trigger(&self) -> Option<EmotionTrigger> {
+        Some(EmotionTrigger::None)
+    }
+
+    /// Get the emotional influences this behavior produces (optional)
+    ///
+    /// Behaviors can override this to specify how executing them
+    /// affects the agent's emotional state.
+    ///
+    /// # Returns
+    ///
+    /// Vector of emotion influences to apply when behavior executes
+    fn emotion_influences(&self) -> Vec<EmotionInfluence> {
+        Vec::new()
+    }
+
+    /// Get the base priority of this behavior
+    ///
+    /// Can be overridden by behaviors that need dynamic priority
+    ///
+    /// # Returns
+    ///
+    /// Priority value (higher = more important)
+    fn priority(&self) -> u32 {
+        50 // Default medium priority
+    }
+
+    /// Calculate dynamic priority based on emotional state
+    ///
+    /// Behaviors can override this to adjust priority based on emotions.
+    /// The final priority will be base_priority + emotional_priority_modifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `emotional_state` - Current emotional state
+    ///
+    /// # Returns
+    ///
+    /// Priority modifier to add to base priority
+    fn emotional_priority_modifier(&self, _emotional_state: &EmotionalState) -> i32 {
+        0
+    }
 }
 
 /// Base behavior with cooldown tracking
