@@ -125,6 +125,84 @@ impl Default for MemoryConfig {
     }
 }
 
+impl MemoryConfig {
+    /// Validate the memory configuration
+    ///
+    /// # Returns
+    ///
+    /// Ok if the configuration is valid, Err with a descriptive message otherwise
+    pub fn validate(&self) -> Result<()> {
+        // Validate capacity
+        if self.capacity == 0 {
+            return Err(OxydeError::ConfigurationError(
+                "Memory capacity must be greater than 0".to_string()
+            ));
+        }
+
+        // Validate short-term capacity
+        if self.short_term_capacity == 0 {
+            return Err(OxydeError::ConfigurationError(
+                "Short-term memory capacity must be greater than 0".to_string()
+            ));
+        }
+
+        if self.short_term_capacity > self.capacity {
+            return Err(OxydeError::ConfigurationError(
+                format!(
+                    "Short-term capacity ({}) cannot exceed total capacity ({})",
+                    self.short_term_capacity, self.capacity
+                )
+            ));
+        }
+
+        // Validate decay rate (0.0 - 1.0)
+        if !(0.0..=1.0).contains(&self.decay_rate) {
+            return Err(OxydeError::ConfigurationError(
+                format!(
+                    "Decay rate must be between 0.0 and 1.0, got {}",
+                    self.decay_rate
+                )
+            ));
+        }
+
+        // Validate importance threshold (0.0 - 1.0)
+        if !(0.0..=1.0).contains(&self.importance_threshold) {
+            return Err(OxydeError::ConfigurationError(
+                format!(
+                    "Importance threshold must be between 0.0 and 1.0, got {}",
+                    self.importance_threshold
+                )
+            ));
+        }
+
+        // Validate embedding dimension
+        if self.use_embeddings && self.embedding_dimension == 0 {
+            return Err(OxydeError::ConfigurationError(
+                "Embedding dimension must be greater than 0 when embeddings are enabled".to_string()
+            ));
+        }
+
+        // Validate custom model path if using custom embedding model
+        if self.embedding_model == EmbeddingModelType::Custom {
+            if self.custom_model_path.is_none() {
+                return Err(OxydeError::ConfigurationError(
+                    "Custom model path must be provided when using custom embedding model".to_string()
+                ));
+            }
+
+            if let Some(ref path) = self.custom_model_path {
+                if path.is_empty() {
+                    return Err(OxydeError::ConfigurationError(
+                        "Custom model path cannot be empty".to_string()
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Configuration for the inference engine
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InferenceConfig {
@@ -193,6 +271,110 @@ impl Default for InferenceConfig {
     }
 }
 
+impl InferenceConfig {
+    /// Validate the inference configuration
+    ///
+    /// # Returns
+    ///
+    /// Ok if the configuration is valid, Err with a descriptive message otherwise
+    pub fn validate(&self) -> Result<()> {
+        // Validate temperature (0.0 - 2.0, though typically 0.0 - 1.0)
+        if !(0.0..=2.0).contains(&self.temperature) {
+            return Err(OxydeError::ConfigurationError(
+                format!(
+                    "Temperature must be between 0.0 and 2.0, got {}",
+                    self.temperature
+                )
+            ));
+        }
+
+        // Validate max tokens
+        if self.max_tokens == 0 {
+            return Err(OxydeError::ConfigurationError(
+                "Max tokens must be greater than 0".to_string()
+            ));
+        }
+
+        if self.max_tokens > 100000 {
+            return Err(OxydeError::ConfigurationError(
+                format!(
+                    "Max tokens ({}) exceeds reasonable limit (100000)",
+                    self.max_tokens
+                )
+            ));
+        }
+
+        // Validate timeout
+        if self.timeout_ms == 0 {
+            return Err(OxydeError::ConfigurationError(
+                "Timeout must be greater than 0ms".to_string()
+            ));
+        }
+
+        if self.timeout_ms > 300000 {
+            return Err(OxydeError::ConfigurationError(
+                format!(
+                    "Timeout ({}ms) exceeds maximum allowed (300000ms / 5 minutes)",
+                    self.timeout_ms
+                )
+            ));
+        }
+
+        // Validate local model configuration
+        if self.use_local {
+            if self.local_model_path.is_none() {
+                return Err(OxydeError::ConfigurationError(
+                    "Local model path must be provided when use_local is true".to_string()
+                ));
+            }
+
+            if let Some(ref path) = self.local_model_path {
+                if path.is_empty() {
+                    return Err(OxydeError::ConfigurationError(
+                        "Local model path cannot be empty".to_string()
+                    ));
+                }
+            }
+        }
+
+        // Validate cloud API configuration
+        if !self.use_local {
+            if self.api_endpoint.is_none() {
+                return Err(OxydeError::ConfigurationError(
+                    "API endpoint must be provided when using cloud inference".to_string()
+                ));
+            }
+
+            if let Some(ref endpoint) = self.api_endpoint {
+                if endpoint.is_empty() {
+                    return Err(OxydeError::ConfigurationError(
+                        "API endpoint cannot be empty".to_string()
+                    ));
+                }
+
+                // Basic URL validation
+                if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+                    return Err(OxydeError::ConfigurationError(
+                        format!(
+                            "API endpoint must be a valid HTTP(S) URL, got: {}",
+                            endpoint
+                        )
+                    ));
+                }
+            }
+        }
+
+        // Validate model name is not empty
+        if self.model.is_empty() {
+            return Err(OxydeError::ConfigurationError(
+                "Model name cannot be empty".to_string()
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 /// Configuration for a behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehaviorConfig {
@@ -232,6 +414,49 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
+    /// Validate the agent configuration
+    ///
+    /// # Returns
+    ///
+    /// Ok if the configuration is valid, Err with a descriptive message otherwise
+    pub fn validate(&self) -> Result<()> {
+        // Validate agent personality
+        if self.agent.name.is_empty() {
+            return Err(OxydeError::ConfigurationError(
+                "Agent name cannot be empty".to_string()
+            ));
+        }
+
+        if self.agent.role.is_empty() {
+            return Err(OxydeError::ConfigurationError(
+                "Agent role cannot be empty".to_string()
+            ));
+        }
+
+        // Validate memory configuration
+        self.memory.validate()?;
+
+        // Validate inference configuration
+        self.inference.validate()?;
+
+        // Validate behavior configurations
+        for (name, behavior_config) in &self.behavior {
+            if name.is_empty() {
+                return Err(OxydeError::ConfigurationError(
+                    "Behavior name cannot be empty".to_string()
+                ));
+            }
+
+            if behavior_config.trigger.is_empty() {
+                return Err(OxydeError::ConfigurationError(
+                    format!("Behavior '{}' must have a non-empty trigger", name)
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Load an agent configuration from a file
     ///
     /// # Arguments
@@ -245,28 +470,33 @@ impl AgentConfig {
         let file = File::open(path.as_ref()).map_err(|e| {
             OxydeError::ConfigurationError(format!("Failed to open config file: {}", e))
         })?;
-        
+
         let reader = BufReader::new(file);
-        
+
         let extension = path.as_ref().extension().and_then(|ext| ext.to_str());
-        
-        match extension {
+
+        let config: AgentConfig = match extension {
             Some("json") => {
                 serde_json::from_reader(reader).map_err(|e| {
                     OxydeError::ConfigurationError(format!("Failed to parse JSON config: {}", e))
-                })
+                })?
             },
             Some("yaml") | Some("yml") => {
                 serde_yaml::from_reader(reader).map_err(|e| {
                     OxydeError::ConfigurationError(format!("Failed to parse YAML config: {}", e))
-                })
+                })?
             },
             _ => {
-                Err(OxydeError::ConfigurationError(
+                return Err(OxydeError::ConfigurationError(
                     "Unknown config file format. Expected .json, .yaml, or .yml".to_string()
-                ))
+                ));
             }
-        }
+        };
+
+        // Validate the loaded configuration
+        config.validate()?;
+
+        Ok(config)
     }
     
     /// Save the agent configuration to a file
@@ -335,11 +565,246 @@ mod tests {
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
         };
-        
+
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: AgentConfig = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.agent.name, "Test Agent");
         assert_eq!(deserialized.agent.role, "Tester");
+    }
+
+    #[test]
+    fn test_memory_config_validation_success() {
+        let config = MemoryConfig::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_memory_config_validation_zero_capacity() {
+        let mut config = MemoryConfig::default();
+        config.capacity = 0;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("capacity must be greater than 0"));
+    }
+
+    #[test]
+    fn test_memory_config_validation_short_term_exceeds_capacity() {
+        let mut config = MemoryConfig::default();
+        config.capacity = 50;
+        config.short_term_capacity = 100;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot exceed total capacity"));
+    }
+
+    #[test]
+    fn test_memory_config_validation_invalid_decay_rate() {
+        let mut config = MemoryConfig::default();
+        config.decay_rate = 1.5;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Decay rate must be between 0.0 and 1.0"));
+    }
+
+    #[test]
+    fn test_memory_config_validation_invalid_importance_threshold() {
+        let mut config = MemoryConfig::default();
+        config.importance_threshold = -0.1;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Importance threshold must be between 0.0 and 1.0"));
+    }
+
+    #[test]
+    fn test_memory_config_validation_custom_model_without_path() {
+        let mut config = MemoryConfig::default();
+        config.embedding_model = EmbeddingModelType::Custom;
+        config.custom_model_path = None;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Custom model path must be provided"));
+    }
+
+    #[test]
+    fn test_inference_config_validation_success() {
+        let config = InferenceConfig::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_inference_config_validation_invalid_temperature() {
+        let mut config = InferenceConfig::default();
+        config.temperature = 3.0;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Temperature must be between 0.0 and 2.0"));
+    }
+
+    #[test]
+    fn test_inference_config_validation_zero_max_tokens() {
+        let mut config = InferenceConfig::default();
+        config.max_tokens = 0;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Max tokens must be greater than 0"));
+    }
+
+    #[test]
+    fn test_inference_config_validation_excessive_max_tokens() {
+        let mut config = InferenceConfig::default();
+        config.max_tokens = 200000;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeds reasonable limit"));
+    }
+
+    #[test]
+    fn test_inference_config_validation_zero_timeout() {
+        let mut config = InferenceConfig::default();
+        config.timeout_ms = 0;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Timeout must be greater than 0ms"));
+    }
+
+    #[test]
+    fn test_inference_config_validation_local_without_path() {
+        let mut config = InferenceConfig::default();
+        config.use_local = true;
+        config.local_model_path = None;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Local model path must be provided"));
+    }
+
+    #[test]
+    fn test_inference_config_validation_cloud_without_endpoint() {
+        let mut config = InferenceConfig::default();
+        config.use_local = false;
+        config.api_endpoint = None;
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("API endpoint must be provided"));
+    }
+
+    #[test]
+    fn test_inference_config_validation_invalid_url() {
+        let mut config = InferenceConfig::default();
+        config.api_endpoint = Some("not-a-valid-url".to_string());
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be a valid HTTP(S) URL"));
+    }
+
+    #[test]
+    fn test_agent_config_validation_success() {
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Test".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec![],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+        };
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_agent_config_validation_empty_name() {
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec![],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Agent name cannot be empty"));
+    }
+
+    #[test]
+    fn test_agent_config_validation_empty_role() {
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Test".to_string(),
+                role: "".to_string(),
+                backstory: vec![],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Agent role cannot be empty"));
+    }
+
+    #[test]
+    fn test_agent_config_validation_cascades_to_memory() {
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Test".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec![],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig {
+                capacity: 0,  // Invalid
+                ..Default::default()
+            },
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("capacity"));
+    }
+
+    #[test]
+    fn test_agent_config_validation_cascades_to_inference() {
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Test".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec![],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig {
+                temperature: 5.0,  // Invalid
+                ..Default::default()
+            },
+            behavior: HashMap::new(),
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Temperature"));
     }
 }
