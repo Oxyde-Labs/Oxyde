@@ -4,6 +4,7 @@
 //! into games, including behaviors, intent understanding, and engine bindings.
 
 pub mod behavior;
+pub mod emotion;
 pub mod intent;
 pub mod bindings;
 

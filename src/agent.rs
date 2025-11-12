@@ -13,6 +13,7 @@ use crate::config::AgentConfig;
 use crate::inference::InferenceEngine;
 use crate::memory::{Memory, MemorySystem, MemoryCategory};
 use crate::oxyde_game::behavior::{Behavior, BehaviorResult};
+use crate::oxyde_game::emotion::EmotionalState;
 use crate::oxyde_game::intent::Intent;
 use crate::Result;
 
@@ -142,6 +143,9 @@ pub struct Agent {
 
     /// Callbacks for agent events
     callbacks: Mutex<HashMap<String, Vec<CallbackWrapper>>>,
+
+    /// Emotional state of the agent
+    emotional_state: RwLock<EmotionalState>,
 }
 
 impl Agent {
@@ -168,6 +172,7 @@ impl Agent {
             context: RwLock::new(HashMap::new()),
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
+            emotional_state: RwLock::new(EmotionalState::default()),
         }
     }
 
@@ -184,6 +189,45 @@ impl Agent {
     /// Get the agent's current state
     pub async fn state(&self) -> AgentState {
         *self.state.read().await
+    }
+
+    /// Get a copy of the agent's current emotional state
+    pub async fn emotional_state(&self) -> EmotionalState {
+        self.emotional_state.read().await.clone()
+    }
+
+    /// Update a specific emotion by a delta value
+    ///
+    /// # Arguments
+    ///
+    /// * `emotion` - Name of the emotion to update (e.g., "joy", "fear")
+    /// * `delta` - Amount to change the emotion by (-1.0 to 1.0)
+    pub async fn update_emotion(&self, emotion: &str, delta: f32) {
+        let mut state = self.emotional_state.write().await;
+        state.update_emotion(emotion, delta);
+    }
+
+    /// Apply emotional decay to all emotions
+    ///
+    /// This should be called periodically (e.g., every frame or tick)
+    /// to allow emotions to naturally fade over time
+    pub async fn decay_emotions(&self) {
+        let mut state = self.emotional_state.write().await;
+        state.decay();
+    }
+
+    /// Get the current emotional valence (-1.0 to 1.0)
+    ///
+    /// Valence represents how positive or negative the agent feels
+    pub async fn emotional_valence(&self) -> f32 {
+        self.emotional_state.read().await.valence()
+    }
+
+    /// Get the current emotional arousal (0.0 to 1.0)
+    ///
+    /// Arousal represents how intensely the agent is feeling
+    pub async fn emotional_arousal(&self) -> f32 {
+        self.emotional_state.read().await.arousal()
     }
 
     /// Add a behavior to the agent
@@ -270,11 +314,14 @@ impl Agent {
         // Analyze player intent
         let intent = Intent::analyze(input).await?;
 
-        // Update memory with player input
-        self.memory.add(Memory::new(
+        // Update memory with player input, capturing current emotional state
+        let emotional_state = self.emotional_state.read().await;
+        self.memory.add(Memory::new_emotional(
                 MemoryCategory::Episodic,
                 input,
                 1.0,
+                emotional_state.valence() as f64,
+                emotional_state.arousal() as f64,
                 None
             )).await?;
 
@@ -323,11 +370,14 @@ impl Agent {
             let context = self.context.read().await.clone();
             response = self.inference.generate_response(input, &memories, &context).await?;
 
-            // Store the response in memory
-            self.memory.add(Memory::new(
+            // Store the response in memory with current emotional state
+            let emotional_state = self.emotional_state.read().await;
+            self.memory.add(Memory::new_emotional(
                 MemoryCategory::Semantic,
                 &response,
                 1.0,
+                emotional_state.valence() as f64,
+                emotional_state.arousal() as f64,
                 None
             )).await?;
         }
