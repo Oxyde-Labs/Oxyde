@@ -334,11 +334,43 @@ impl Agent {
             *state = AgentState::Executing;
         }
 
-        // Execute matching behaviors
-        for behavior in behaviors.iter() {
+        // Get current emotional state for behavior filtering and prioritization
+        let current_emotional_state = self.emotional_state.read().await.clone();
+
+        // Filter and sort behaviors by priority (considering emotional modifiers)
+        let mut candidate_behaviors: Vec<_> = behaviors
+            .iter()
+            .filter(|b| {
+                // Check if behavior's emotion trigger is satisfied
+                if let Some(trigger) = b.emotion_trigger() {
+                    trigger.matches(&current_emotional_state)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        // Sort by priority (base + emotional modifier), highest first
+        candidate_behaviors.sort_by(|a, b| {
+            let a_priority = a.priority() as i32 + a.emotional_priority_modifier(&current_emotional_state);
+            let b_priority = b.priority() as i32 + b.emotional_priority_modifier(&current_emotional_state);
+            b_priority.cmp(&a_priority) // Descending order
+        });
+
+        // Execute matching behaviors in priority order
+        for behavior in candidate_behaviors {
             if behavior.matches_intent(&intent).await {
                 let context = self.context.read().await.clone();
                 let behavior_result = behavior.execute(&intent, &context).await?;
+
+                // Apply emotional influences from the behavior
+                let influences = behavior.emotion_influences();
+                if !influences.is_empty() {
+                    let mut emotional_state = self.emotional_state.write().await;
+                    for influence in influences {
+                        emotional_state.update_emotion(&influence.emotion, influence.delta);
+                    }
+                }
 
                 match behavior_result {
                     BehaviorResult::Response(text) => {
