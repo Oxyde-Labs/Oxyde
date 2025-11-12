@@ -471,6 +471,9 @@ impl AgentBuilder {
             crate::OxydeError::ConfigurationError("Agent configuration is required".to_string())
         })?;
 
+        // Validate the configuration before building
+        config.validate()?;
+
         let agent = Agent::new(config);
 
         // Add all behaviors provided via the builder
