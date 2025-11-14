@@ -13,6 +13,7 @@ use ffi_support::{ByteBuffer, FfiStr};
 
 use crate::agent::{Agent, AgentContext, AgentState};
 use crate::oxyde_game::bindings::{EngineBinding, load_agent_config, parse_context_json};
+use crate::oxyde_game::emotion::EmotionalState;
 use crate::{OxydeError, Result};
 
 /// Unity-specific agent state
@@ -32,17 +33,22 @@ pub struct UnityAgentState {
     
     /// Available behaviors
     pub behaviors: Vec<String>,
+
+    /// Emotion vector [joy, anger, fear]
+    pub emotion_vector: [f32; 3],
 }
 
 impl From<&Agent> for UnityAgentState {
     fn from(agent: &Agent) -> Self {
         // This would be populated properly in a complete implementation
+        // For now, we use placeholder values since we can't await in a sync context
         UnityAgentState {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
             state: format!("{:?}", AgentState::Idle), // Placeholder
             last_response: None,
             behaviors: Vec::new(),
+            emotion_vector: [0.0, 0.0, 0.0], // Placeholder
         }
     }
 }
@@ -135,6 +141,26 @@ impl UnityBinding {
             OxydeError::BindingError(format!("Failed to serialize agent state: {}", e))
         })
     }
+
+    /// Get agent emotion vector
+    ///
+    /// # Arguments
+    ///
+    /// * `agent` - Agent to get emotion vector for
+    ///
+    /// # Returns
+    ///
+    /// Emotion vector [joy, anger, fear] or an error
+    pub fn get_agent_emotion_vector(&self, agent: &Agent) -> Result<[f32; 3]> {
+        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+            OxydeError::BindingError(format!("Failed to create Tokio runtime: {}", e))
+        })?;
+        
+        runtime.block_on(async {
+            Ok(agent.emotion_vector().await)
+        })
+    }
+
 }
 
 impl EngineBinding for UnityBinding {
@@ -254,11 +280,11 @@ pub mod ffi {
         match binding.get_agent(&agent_id_str) {
             Ok(agent) => {
                 match binding.process_input(&agent, &input_str) {
-                    Ok(response) => ByteBuffer::from_str(&response),
-                    Err(_) => ByteBuffer::from_str("Error processing input"),
+                    Ok(response) => ByteBuffer::from(response.into_bytes()),
+                    Err(_) => ByteBuffer::from("Error processing input".as_bytes().to_vec()),
                 }
             },
-            Err(_) => ByteBuffer::from_str("Agent not found"),
+            Err(_) => ByteBuffer::from("Agent not found".as_bytes().to_vec()),
         }
     }
     
@@ -271,14 +297,68 @@ pub mod ffi {
         match binding.get_agent(&agent_id_str) {
             Ok(agent) => {
                 match binding.get_agent_state_json(&agent) {
-                    Ok(state_json) => ByteBuffer::from_str(&state_json),
-                    Err(_) => ByteBuffer::from_str("{}"),
+                    Ok(state_json) => ByteBuffer::from(state_json.into_bytes()),
+                    Err(_) => ByteBuffer::from("{}".as_bytes().to_vec()),
                 }
             },
-            Err(_) => ByteBuffer::from_str("{}"),
+            Err(_) => ByteBuffer::from("{}".as_bytes().to_vec()),
         }
     }
     
+    /// Get agent emotion vector
+    #[no_mangle]
+    pub extern "C" fn oxyde_unity_get_emotion_vector(agent_id: FfiStr) -> ByteBuffer {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                match binding.get_agent_emotion_vector(&agent) {
+                    Ok(emotion_vector) => {
+                        let json_data = serde_json::json!({
+                            "joy": emotion_vector[0],
+                            "anger": emotion_vector[1],
+                            "fear": emotion_vector[2]
+                        });
+                        ByteBuffer::from(json_data.to_string().into_bytes())
+                    },
+                    Err(_) => ByteBuffer::from(r#"{"joy": 0.0, "anger": 0.0, "fear": 0.0}"#.as_bytes().to_vec()),
+                }
+            },
+            Err(_) => ByteBuffer::from(r#"{"joy": 0.0, "anger": 0.0, "fear": 0.0}"#.as_bytes().to_vec()),
+        }
+    }
+
+    /// Get agent emotion vector as raw floats (alternative to JSON)
+    #[no_mangle]
+    pub extern "C" fn oxyde_unity_get_emotion_vector_raw(agent_id: FfiStr, out_joy: *mut f32, out_anger: *mut f32, out_fear: *mut f32) -> bool {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                match binding.get_agent_emotion_vector(&agent) {
+                    Ok(emotion_vector) => {
+                        unsafe {
+                            if !out_joy.is_null() {
+                                *out_joy = emotion_vector[0];
+                            }
+                            if !out_anger.is_null() {
+                                *out_anger = emotion_vector[1];
+                            }
+                            if !out_fear.is_null() {
+                                *out_fear = emotion_vector[2];
+                            }
+                        }
+                        true
+                    },
+                    Err(_) => false,
+                }
+            },
+            Err(_) => false,
+        }
+    }
+
     /// Free a string allocated by the Oxyde SDK
     #[no_mangle]
     pub extern "C" fn oxyde_unity_free_string(s: *mut c_char) {

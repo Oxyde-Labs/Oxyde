@@ -172,7 +172,7 @@ impl Agent {
             context: RwLock::new(HashMap::new()),
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
-            emotional_state: RwLock::new(EmotionalState::default()),
+            emotional_state: RwLock::new(EmotionalState::new()),
         }
     }
 
@@ -194,6 +194,12 @@ impl Agent {
     /// Get a copy of the agent's current emotional state
     pub async fn emotional_state(&self) -> EmotionalState {
         self.emotional_state.read().await.clone()
+    }
+
+    /// Get the agent's emotion vector as a float array
+    pub async fn emotion_vector(&self) -> [f32; 3] {
+        let emotion_state = self.emotional_state.read().await;
+        emotion_state.as_vector()
     }
 
     /// Update a specific emotion by a delta value
@@ -387,6 +393,7 @@ impl Agent {
             *state = AgentState::Idle;
         }
 
+
         // Trigger response callback
         self.trigger_event(AgentEvent::Response, &response).await;
 
@@ -462,6 +469,7 @@ impl Agent {
             }
         }
     }
+
 
     /// Create a new agent with the same configuration but new state
     /// 

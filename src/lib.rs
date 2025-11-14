@@ -30,7 +30,7 @@
 //! }
 //! ```
 
-#![forbid(unsafe_code)]
+#![cfg_attr(not(any(feature = "unity", feature = "unreal")), forbid(unsafe_code))]
 #![warn(missing_docs)]
 
 // Re-exports
