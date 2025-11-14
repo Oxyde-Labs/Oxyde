@@ -15,6 +15,7 @@ OxydeUnreal::CreateAgentFuncPtr OxydeUnreal::CreateAgentFunc = nullptr;
 OxydeUnreal::UpdateAgentFuncPtr OxydeUnreal::UpdateAgentFunc = nullptr;
 OxydeUnreal::ProcessInputFuncPtr OxydeUnreal::ProcessInputFunc = nullptr;
 OxydeUnreal::GetAgentStateFuncPtr OxydeUnreal::GetAgentStateFunc = nullptr;
+OxydeUnreal::GetEmotionVectorFuncPtr OxydeUnreal::GetEmotionVectorFunc = nullptr;
 OxydeUnreal::FreeStringFuncPtr OxydeUnreal::FreeStringFunc = nullptr;
 
 bool OxydeUnreal::Init()
@@ -155,6 +156,7 @@ bool OxydeUnreal::InitializeFunctionPointers()
     UpdateAgentFunc = (UpdateAgentFuncPtr)FPlatformProcess::GetDllExport(LibraryHandle, TEXT("oxyde_unreal_update_agent"));
     ProcessInputFunc = (ProcessInputFuncPtr)FPlatformProcess::GetDllExport(LibraryHandle, TEXT("oxyde_unreal_process_input"));
     GetAgentStateFunc = (GetAgentStateFuncPtr)FPlatformProcess::GetDllExport(LibraryHandle, TEXT("oxyde_unreal_get_agent_state"));
+    GetEmotionVectorFunc = (GetEmotionVectorFuncPtr)FPlatformProcess::GetDllExport(LibraryHandle, TEXT("oxyde_unreal_get_emotion_vector"));
     FreeStringFunc = (FreeStringFuncPtr)FPlatformProcess::GetDllExport(LibraryHandle, TEXT("oxyde_unreal_free_string"));
 
     // Check that all functions were found
@@ -163,6 +165,7 @@ bool OxydeUnreal::InitializeFunctionPointers()
         UpdateAgentFunc == nullptr ||
         ProcessInputFunc == nullptr ||
         GetAgentStateFunc == nullptr ||
+        GetEmotionVectorFunc == nullptr ||
         FreeStringFunc == nullptr)
     {
         UE_LOG(LogOxyde, Error, TEXT("Failed to load one or more Oxyde SDK functions"));
@@ -174,3 +177,15 @@ bool OxydeUnreal::InitializeFunctionPointers()
     UE_LOG(LogOxyde, Log, TEXT("Oxyde SDK library loaded successfully"));
     return true;
 }
+
+bool OxydeUnreal::GetAgentEmotionVector(const char* AgentId, float* OutJoy, float* OutAnger, float* OutFear)
+{
+    if (!GetEmotionVectorFunc)
+    {
+        UE_LOG(LogOxyde, Error, TEXT("GetEmotionVectorFunc not initialized"));
+        return false;
+    }
+
+    return GetEmotionVectorFunc(AgentId, OutJoy, OutAnger, OutFear);
+}
+

@@ -30,6 +30,12 @@ namespace Oxyde.Unity
         [DllImport("oxyde", EntryPoint = "oxyde_unity_get_agent_state")]
         private static extern IntPtr NativeGetAgentState(string agentId);
 
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_get_emotion_vector")]
+        private static extern IntPtr NativeGetEmotionVector(string agentId);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_get_emotion_vector_raw")]
+        private static extern bool NativeGetEmotionVectorRaw(string agentId, out float joy, out float anger, out float fear);
+
         [DllImport("oxyde", EntryPoint = "oxyde_unity_free_string")]
         private static extern void NativeFreeString(IntPtr ptr);
 
@@ -161,6 +167,36 @@ namespace Oxyde.Unity
             }
         }
 
+        /// <summary>
+        /// Get the agent's emotion vector as a float array
+        /// </summary>
+        /// <param name="agentId">Agent ID string</param>
+        /// <returns>Float array with emotion values [joy, anger, fear]</returns>
+        public static float[] GetAgentEmotionVector(string agentId)
+        {
+            try
+            {
+                float joy, anger, fear;
+                bool success = NativeGetEmotionVectorRaw(agentId, out joy, out anger, out fear);
+                
+                if (success)
+                {
+                    return new float[] { joy, anger, fear };
+                }
+                else
+                {
+                    Debug.LogWarning($"Failed to get emotion vector for agent {agentId}");
+                    return new float[] { 0.0f, 0.0f, 0.0f };
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error getting agent emotion vector: {ex.Message}");
+                return new float[] { 0.0f, 0.0f, 0.0f };
+            }
+        }
+
+
         #endregion
     }
 
@@ -188,6 +224,11 @@ namespace Oxyde.Unity
         /// Last response from the agent
         /// </summary>
         public string LastResponse { get; private set; }
+
+        /// <summary>
+        /// Current emotion vector [joy, anger, fear]
+        /// </summary>
+        public float[] EmotionVector { get; private set; } = new float[] { 0.0f, 0.0f, 0.0f };
         
         /// <summary>
         /// Initialize the agent with a configuration file
@@ -333,7 +374,49 @@ namespace Oxyde.Unity
         /// </summary>
         protected virtual void Update()
         {
-            // Base implementation does nothing
+            // Update emotion data if agent is initialized
+            if (IsInitialized)
+            {
+                UpdateEmotionData();
+            }
+        }
+
+        /// <summary>
+        /// Update emotion data from the agent
+        /// </summary>
+        protected virtual void UpdateEmotionData()
+        {
+            try
+            {
+                // Get emotion vector directly as float array
+                EmotionVector = OxydeUnity.GetAgentEmotionVector(AgentId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"Failed to update emotion data for agent {AgentName}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Set animator float parameters based on emotion vector
+        /// </summary>
+        /// <param name="animator">Animator component to update</param>
+        public virtual void UpdateAnimatorWithEmotions(Animator animator)
+        {
+            if (animator == null || !IsInitialized || EmotionVector == null || EmotionVector.Length < 3)
+                return;
+
+            try
+            {
+                // Set float parameters for each emotion
+                animator.SetFloat("Joy", EmotionVector[0]);
+                animator.SetFloat("Anger", EmotionVector[1]);
+                animator.SetFloat("Fear", EmotionVector[2]);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"Failed to update animator with emotions: {ex.Message}");
+            }
         }
         
         /// <summary>
