@@ -394,6 +394,40 @@ pub struct BehaviorConfig {
     pub parameters: HashMap<String, serde_json::Value>,
 }
 
+/// Configuration for content moderation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModerationConfig {
+    /// Whether moderation is enabled
+    #[serde(default)]
+    pub enabled: bool,
+    
+    /// Response message when content is moderated
+    #[serde(default = "default_moderation_response")]
+    pub response_message: String,
+    
+    /// Whether to use cloud moderation APIs (OpenAI/Anthropic) in addition to regex
+    #[serde(default)]
+    pub use_cloud_moderation: bool,
+    
+    /// API key for cloud moderation (uses same as inference if not set)
+    pub cloud_moderation_api_key: Option<String>,
+}
+
+fn default_moderation_response() -> String {
+    "Sorry, I can't respond to that.".to_string()
+}
+
+impl Default for ModerationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            response_message: default_moderation_response(),
+            use_cloud_moderation: false,
+            cloud_moderation_api_key: None,
+        }
+    }
+}
+
 /// Complete agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -411,6 +445,10 @@ pub struct AgentConfig {
     /// Behavior configurations
     #[serde(default)]
     pub behavior: HashMap<String, BehaviorConfig>,
+    
+    /// Content moderation configuration
+    #[serde(default)]
+    pub moderation: ModerationConfig,
 }
 
 impl AgentConfig {
@@ -564,6 +602,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: ModerationConfig::default(),
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -721,6 +760,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: ModerationConfig::default(),
         };
 
         assert!(config.validate().is_ok());
@@ -738,6 +778,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: ModerationConfig::default(),
         };
 
         let result = config.validate();
@@ -757,6 +798,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: ModerationConfig::default(),
         };
 
         let result = config.validate();
@@ -779,6 +821,7 @@ mod tests {
             },
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: ModerationConfig::default(),
         };
 
         let result = config.validate();
@@ -801,6 +844,7 @@ mod tests {
                 ..Default::default()
             },
             behavior: HashMap::new(),
+            moderation: ModerationConfig::default(),
         };
 
         let result = config.validate();
