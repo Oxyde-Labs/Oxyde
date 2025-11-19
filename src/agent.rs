@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use regex::RegexSet;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -146,6 +147,9 @@ pub struct Agent {
 
     /// Emotional state of the agent
     emotional_state: RwLock<EmotionalState>,
+
+    /// Moderation patterns for content filtering
+    moderation_patterns: Option<RegexSet>,
 }
 
 impl Agent {
@@ -162,6 +166,13 @@ impl Agent {
         let inference = Arc::new(InferenceEngine::new(&config.inference));
         let memory = Arc::new(MemorySystem::new(config.memory.clone()));
 
+        // Load moderation patterns if enabled
+        let moderation_patterns = if config.moderation.enabled {
+            crate::utils::load_moderation_patterns("assets/badwords_regex.txt").ok()
+        } else {
+            None
+        };
+
         Self {
             id: Uuid::new_v4(),
             name: config.agent.name.clone(),
@@ -173,6 +184,7 @@ impl Agent {
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
             emotional_state: RwLock::new(EmotionalState::default()),
+            moderation_patterns,
         }
     }
 
@@ -294,6 +306,58 @@ impl Agent {
         Ok(())
     }
 
+    /// Check if content should be moderated
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Content to check for inappropriate material
+    ///
+    /// # Returns
+    ///
+    /// `Some(response_message)` if content should be moderated, `None` if content is acceptable
+    async fn check_moderation(&self, input: &str) -> Option<String> {
+        if !self.config.moderation.enabled {
+            return None;
+        }
+
+        // Quick regex check first (instant)
+        let regex_flagged = if let Some(ref patterns) = self.moderation_patterns {
+            patterns.is_match(&input.to_lowercase())
+        } else {
+            false
+        };
+        
+        // If regex already flagged it, no need for cloud check - return immediately
+        if regex_flagged {
+            log::warn!("Agent {} moderated inappropriate content (regex): {}", self.name, input);
+            return Some(self.config.moderation.response_message.clone());
+        }
+        
+        // Only do cloud check if regex didn't catch it and cloud moderation is enabled
+        if self.config.moderation.use_cloud_moderation {
+            let api_key = self.config.moderation.cloud_moderation_api_key.clone()
+                .or_else(|| self.config.inference.api_key.clone())
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            
+            if let Some(key) = api_key {
+                match crate::utils::check_cloud_moderation(input, &key).await {
+                    Ok(true) => {
+                        log::warn!("Agent {} moderated inappropriate content (cloud): {}", self.name, input);
+                        return Some(self.config.moderation.response_message.clone());
+                    },
+                    Ok(false) => {
+                        // Content is clean, continue processing
+                    },
+                    Err(e) => {
+                        log::warn!("Cloud moderation failed, continuing without it: {}", e);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Process player input and generate a response
     ///
     /// # Arguments
@@ -310,6 +374,16 @@ impl Agent {
         }
 
         log::debug!("Agent {} processing input: {}", self.name, input);
+
+        // Check for inappropriate content if moderation is enabled
+        if let Some(moderation_response) = self.check_moderation(input).await {
+            {
+                let mut state = self.state.write().await;
+                *state = AgentState::Idle;
+            }
+            self.trigger_callback("response", &moderation_response).await;
+            return Ok(moderation_response);
+        }
 
         // Analyze player intent
         let intent = Intent::analyze(input).await?;
@@ -552,6 +626,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: crate::config::ModerationConfig::default(),
         };
 
         let agent = Agent::new(config);
@@ -578,6 +653,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: crate::config::ModerationConfig::default(),
         };
 
         // Create agent with builder and add behaviors
@@ -617,5 +693,33 @@ mod tests {
         } else {
             panic!("Expected ConfigurationError");
         }
+    }
+
+    #[tokio::test]
+    async fn test_content_moderation() {
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Test Agent".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec!["A test agent".to_string()],
+                knowledge: vec!["Testing knowledge".to_string()],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+            moderation: crate::config::ModerationConfig {
+                enabled: true,
+                response_message: "Sorry, I can't respond to that.".to_string(),
+                use_cloud_moderation: false,
+                cloud_moderation_api_key: None,
+            },
+        };
+
+        let agent = Agent::new(config);
+        agent.start().await.unwrap();
+
+        // Test that bad words trigger moderation response
+        let response = agent.process_input("Fuck you").await.unwrap();
+        assert_eq!(response, "Sorry, I can't respond to that.");
     }
 }
