@@ -8,3 +8,4 @@ oxyde = { path = "../../" }  # Path to your main SDK
 tokio = { version = "1.0", features = ["full"] }
 uuid = "1.0"
 serde_json = "1.0"
+dotenvy = "0.15"

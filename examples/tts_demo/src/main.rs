@@ -8,11 +8,11 @@ use std::io::{self, Write};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Set up your ElevenLabs API key
-    std::env::set_var(
-        "ELEVENLABS_API_KEY",
-        "sk_ca0c02fef5b161403e1bfbfa1f6b6561aa6586c11416099b", //or set this in your environment variables and remove this line
-    );
+    dotenvy::dotenv().ok();
+    let api_key = std::env::var("ELEVENLABS_API_KEY")
+        .expect("ELEVENLABS_API_KEY must be set in .env");
+
+    std::env::set_var("ELEVENLABS_API_KEY", api_key);
 
     // Configure TTS settings
     let tts_config = TTSConfig {
@@ -45,12 +45,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         inference: InferenceConfig::default(),
         behavior: HashMap::new(),
         tts: Some(tts_config), // Enable TTS
+        prompts: None,
     };
 
     // Create agent with TTS enabled
     let agent = Agent::new_with_tts(agent_config);
 
-    // Add behaviors like the guard does
 
     // Create greeting behavior for Tom
     let greeting_behavior = GreetingBehavior::new(
@@ -150,7 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        println!(); // Add spacing
+        println!(); 
     }
 
     println!("Thanks for chatting with Tom!");
