@@ -9,13 +9,13 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::audio::{AudioData, EmotionalState, TTSConfig, TTSError, TTSService};
+use crate::audio::{AudioData, EmotionalState, TTSError, TTSService};
 use crate::config::AgentConfig;
 use crate::inference::InferenceEngine;
 use crate::memory::{Memory, MemoryCategory, MemorySystem};
 use crate::oxyde_game::behavior::{Behavior, BehaviorResult};
 use crate::oxyde_game::intent::Intent;
-use crate::Result;
+use crate::{PromptConfig, Result};
 
 /// Callback for agent events
 pub type AgentCallback = Box<dyn Fn(&Agent, &str) + Send + Sync>;
@@ -141,6 +141,9 @@ pub struct Agent {
     /// Behaviors available to the agent
     behaviors: RwLock<Vec<Box<dyn Behavior>>>,
 
+    /// Prompt templates for the agent
+    prompts: Arc<PromptConfig>, // ← Use Arc<PromptConfig>, NOT Result!
+
     /// TTS service for generating speech
     tts_service: Option<Arc<TTSService>>,
 
@@ -161,6 +164,9 @@ impl Agent {
     pub fn new(config: AgentConfig) -> Self {
         let inference = Arc::new(InferenceEngine::new(&config.inference));
         let memory = Arc::new(MemorySystem::new(config.memory.clone()));
+        let prompts = Arc::new(config.prompts.clone().unwrap_or_else(|| {
+            PromptConfig::from_bundled_default().expect("Failed to load bundled prompt defaults")
+        }));
 
         Self {
             id: Uuid::new_v4(),
@@ -173,6 +179,7 @@ impl Agent {
             context: RwLock::new(HashMap::new()),
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
+            prompts,
         }
     }
 
@@ -188,7 +195,9 @@ impl Agent {
                 tts_config.clone(),
             ))
         });
-
+        let prompts = Arc::new(config.prompts.clone().unwrap_or_else(|| {
+            PromptConfig::from_bundled_default().expect("Failed to load bundled prompt defaults")
+        }));
         Self {
             id: Uuid::new_v4(),
             name: config.agent.name.clone(),
@@ -200,6 +209,7 @@ impl Agent {
             context: RwLock::new(HashMap::new()),
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
+            prompts,
         }
     }
 
@@ -288,6 +298,15 @@ impl Agent {
             ))
             .await?;
 
+        let context = {
+            let mut ctx = HashMap::new();
+            ctx.insert("name".to_string(), serde_json::json!(self.name.clone()));
+            ctx.insert("role".to_string(), serde_json::json!(self.config.agent.role.clone()));
+            ctx
+        };
+
+        self.update_context(context).await;
+
         self.trigger_event(AgentEvent::Start, "Agent started").await;
 
         Ok(())
@@ -352,7 +371,7 @@ impl Agent {
                     BehaviorResult::Action(action) => {
                         // Trigger action callback
                         self.trigger_event(AgentEvent::Action, &action).await;
-                    },
+                    }
                     BehaviorResult::None => {
                         // Continue to next behavior
                     }
@@ -369,12 +388,28 @@ impl Agent {
 
             // Get relevant memories
             let memories = self.memory.retrieve_relevant(input, 5, None).await?;
+            
+            let system_prompt = self.prompts.generate_system_prompt(
+                &self.name,
+                &self.config.agent.role,
+                &[], // conversation history
+            );
+
+            let memory_data: Vec<(String, String, f64)> = memories
+                .iter()
+                .map(|m| (
+                    m.content.clone(),
+                    m.category.as_str().to_string(),
+                    m.importance,
+                ))
+                .collect();
+            let memory_context = self.prompts.format_memory_context(&memory_data);
 
             // Generate response using inference engine
             let context = self.context.read().await.clone();
             response = self
                 .inference
-                .generate_response(input, &memories, &context)
+                .generate_response(input, &memories, &context, &system_prompt, &memory_context)
                 .await?;
 
             // Store the response in memory
@@ -476,17 +511,24 @@ impl Agent {
 
 impl std::fmt::Debug for Agent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let callbacks_count = self.callbacks.lock()
-            .map(|cb| cb.len())
-            .unwrap_or(0);
+        let callbacks_count = self.callbacks.lock().map(|cb| cb.len()).unwrap_or(0);
 
         f.debug_struct("Agent")
             .field("id", &self.id)
             .field("name", &self.name)
             .field("config", &self.config)
             // Don't debug the behaviors or callbacks directly as they don't implement Debug
-            .field("behaviors_count", &format!("<{} behaviors>", self.behaviors.try_read().map(|b| b.len()).unwrap_or(0)))
-            .field("callbacks_count", &format!("<{} callback types>", callbacks_count))
+            .field(
+                "behaviors_count",
+                &format!(
+                    "<{} behaviors>",
+                    self.behaviors.try_read().map(|b| b.len()).unwrap_or(0)
+                ),
+            )
+            .field(
+                "callbacks_count",
+                &format!("<{} callback types>", callbacks_count),
+            )
             .finish()
     }
 }
@@ -551,6 +593,7 @@ mod tests {
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
             tts: None, // No TTS for this test
+            prompts: Some(PromptConfig::from_bundled_default().unwrap()),
         };
 
         let agent = Agent::new(config);
@@ -577,7 +620,8 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
-            tts: None, // No TTS for this test
+            tts: None, // No TTS for this test,
+            prompts: None,
         };
 
         // Create agent with builder and add behaviors
@@ -596,7 +640,11 @@ mod tests {
 
         // Verify behaviors were added (check the count)
         let behaviors = agent.behaviors.read().await;
-        assert_eq!(behaviors.len(), 2, "Builder should add all provided behaviors");
+        assert_eq!(
+            behaviors.len(),
+            2,
+            "Builder should add all provided behaviors"
+        );
     }
 
     #[tokio::test]
@@ -606,14 +654,14 @@ mod tests {
         let greeting = GreetingBehavior::new("Hello!");
 
         // Attempt to build without config should fail
-        let result = AgentBuilder::new()
-            .with_behavior(greeting)
-            .build()
-            .await;
+        let result = AgentBuilder::new().with_behavior(greeting).build().await;
 
         assert!(result.is_err(), "Building without config should fail");
         if let Err(crate::OxydeError::ConfigurationError(msg)) = result {
-            assert!(msg.contains("required"), "Error should mention config is required");
+            assert!(
+                msg.contains("required"),
+                "Error should mention config is required"
+            );
         } else {
             panic!("Expected ConfigurationError");
         }

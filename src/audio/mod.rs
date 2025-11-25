@@ -267,6 +267,8 @@ impl TTSService {
         let api_key = std::env::var("ELEVENLABS_API_KEY")
             .map_err(|_| TTSError::MissingApiKey("ElevenLabs"))?;
 
+        println!("elevenlabs api key {}", api_key);
+
         // Use a valid ElevenLabs voice ID
         let voice_id = if settings.voice_id == "default" {
             "21m00Tcm4TlvDq8ikWAM" // Rachel - a real ElevenLabs voice ID

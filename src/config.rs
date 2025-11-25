@@ -6,11 +6,12 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use toml;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{audio::TTSConfig, OxydeError, Result};
+use crate::{audio::TTSConfig, OxydeError, PromptConfig, Result};
 
 /// Configuration for an agent's personality and behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -233,6 +234,10 @@ pub struct AgentConfig {
     ///Text to Speech Configurations
     #[serde(default)]
     pub tts: Option<TTSConfig>,
+
+    /// Prompt Configurations
+    #[serde(default)]
+    pub prompts: Option<PromptConfig>,
 }
 
 impl AgentConfig {
@@ -254,17 +259,42 @@ impl AgentConfig {
 
         let extension = path.as_ref().extension().and_then(|ext| ext.to_str());
 
-        match extension {
+        let mut config: Self = match extension {
             Some("json") => serde_json::from_reader(reader).map_err(|e| {
                 OxydeError::ConfigurationError(format!("Failed to parse JSON config: {}", e))
-            }),
+            })?,
             Some("yaml") | Some("yml") => serde_yaml::from_reader(reader).map_err(|e| {
                 OxydeError::ConfigurationError(format!("Failed to parse YAML config: {}", e))
-            }),
-            _ => Err(OxydeError::ConfigurationError(
-                "Unknown config file format. Expected .json, .yaml, or .yml".to_string(),
-            )),
+            })?,
+            Some("toml") => {
+                let content = std::io::read_to_string(reader).map_err(|e| {
+                    OxydeError::ConfigurationError(format!("Failed to read TOML config: {}", e))
+                })?;
+                toml::from_str(&content).map_err(|e| {
+                    OxydeError::ConfigurationError(format!("Failed to parse TOML config: {}", e))
+                })?
+            },
+            _ => {
+                return Err(OxydeError::ConfigurationError(
+                    "Unknown config file format. Expected .json, .toml, .yaml, or .yml".to_string(),
+                ))
+            }
+        };
+
+        // If no prompts are embedded, try to load from prompts.toml
+        if config.prompts.is_none() {
+            let prompts_path = path
+                .as_ref()
+                .parent()
+                .map(|p| p.join("prompts.toml"))
+                .unwrap_or_else(|| PathBuf::from("prompts.toml"));
+        // config.prompts = Some(PromptConfig::from_file_or_default(prompts_path)?);
+            if prompts_path.exists() {
+                config.prompts = Some(PromptConfig::from_file(prompts_path)?);
+            }
         }
+
+        Ok(config)
     }
 
     /// Save the agent configuration to a file
@@ -290,6 +320,18 @@ impl AgentConfig {
             Some("yaml") | Some("yml") => serde_yaml::to_writer(file, self).map_err(|e| {
                 OxydeError::ConfigurationError(format!("Failed to write YAML config: {}", e))
             }),
+            Some("toml") => {
+                let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
+                    OxydeError::ConfigurationError(format!("Failed to read TOML config: {}", e))
+                })?;
+                toml::to_string(self).map_err(|e| {
+                    OxydeError::ConfigurationError(format!("Failed to serialize to TOML: {}", e))
+                }).and_then(|content| {
+                    std::fs::write(path.as_ref(), content).map_err(|e| {
+                        OxydeError::ConfigurationError(format!("Failed to write TOML config: {}", e))
+                    })
+                })
+            }
             _ => Err(OxydeError::ConfigurationError(
                 "Unknown config file format. Expected .json, .yaml, or .yml".to_string(),
             )),
@@ -326,7 +368,8 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
-            tts: None
+            tts: None,
+            prompts: None,
         };
 
         let json = serde_json::to_string(&config).unwrap();
