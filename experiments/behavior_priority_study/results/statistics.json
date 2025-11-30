@@ -1,0 +1,44 @@
+[
+  {
+    "strategy": "random_selection",
+    "total_interactions": 17,
+    "behavior_counts": {
+      "DefaultAcknowledgeBehavior": 7,
+      "AggressiveBehavior { anger_threshold: 0.6 }": 2,
+      "ThoughtfulPauseBehavior": 5,
+      "FriendlyBehavior { min_valence: 0.3 }": 2,
+      "FleeBehavior { fear_threshold: 0.7 }": 1
+    },
+    "avg_priority_override": 2.9411764,
+    "variety_score": 2.013279,
+    "expected_match_rate": 29.411766
+  },
+  {
+    "strategy": "fixed_priority",
+    "total_interactions": 17,
+    "behavior_counts": {
+      "FleeBehavior { fear_threshold: 0.7 }": 4,
+      "FriendlyBehavior { min_valence: 0.3 }": 6,
+      "AggressiveBehavior { anger_threshold: 0.6 }": 4,
+      "JoyfulBehavior": 3
+    },
+    "avg_priority_override": 5.882353,
+    "variety_score": 1.9542475,
+    "expected_match_rate": 76.47059
+  },
+  {
+    "strategy": "emotion_modulated",
+    "total_interactions": 17,
+    "behavior_counts": {
+      "AggressiveBehavior { anger_threshold: 0.6 }": 4,
+      "NeutralGreetingBehavior": 1,
+      "ThoughtfulPauseBehavior": 5,
+      "FleeBehavior { fear_threshold: 0.7 }": 2,
+      "ConfusedBehavior": 2,
+      "JoyfulBehavior": 3
+    },
+    "avg_priority_override": 8.235294,
+    "variety_score": 2.4189613,
+    "expected_match_rate": 47.058823
+  }
+]

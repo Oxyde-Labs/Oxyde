@@ -1,0 +1,52 @@
+strategy,scenario,step,selected_behavior,base_priority,emotional_modifier,final_priority,dominant_emotion,dominant_value,valence,arousal,matches_expected
+emotion_modulated,peaceful_village,0,JoyfulBehavior,50,0,50,joy,0.700,0.186,0.162,false
+emotion_modulated,peaceful_village,1,ConfusedBehavior,15,0,15,trust,0.500,0.129,0.112,false
+emotion_modulated,peaceful_village,2,JoyfulBehavior,50,0,50,joy,0.800,0.214,0.188,true
+fixed_priority,peaceful_village,0,FriendlyBehavior { min_valence: 0.3 },60,0,60,joy,0.700,0.186,0.162,true
+fixed_priority,peaceful_village,1,JoyfulBehavior,50,0,50,trust,0.500,0.129,0.112,false
+fixed_priority,peaceful_village,2,FriendlyBehavior { min_valence: 0.3 },60,0,60,joy,0.800,0.214,0.188,true
+random_selection,peaceful_village,0,FriendlyBehavior { min_valence: 0.3 },60,0,60,joy,0.700,0.186,0.162,true
+random_selection,peaceful_village,1,DefaultAcknowledgeBehavior,10,0,10,trust,0.500,0.129,0.112,false
+random_selection,peaceful_village,2,FriendlyBehavior { min_valence: 0.3 },60,0,60,joy,0.800,0.214,0.188,true
+emotion_modulated,threatening_situation,0,ThoughtfulPauseBehavior,12,0,12,fear,0.500,-0.014,0.112,false
+emotion_modulated,threatening_situation,1,FleeBehavior { fear_threshold: 0.7 },100,50,150,fear,0.850,-0.121,0.144,true
+emotion_modulated,threatening_situation,2,FleeBehavior { fear_threshold: 0.7 },100,50,150,fear,0.950,-0.136,0.206,true
+fixed_priority,threatening_situation,0,FleeBehavior { fear_threshold: 0.7 },100,0,100,fear,0.500,-0.014,0.112,true
+fixed_priority,threatening_situation,1,FleeBehavior { fear_threshold: 0.7 },100,50,150,fear,0.850,-0.121,0.144,true
+fixed_priority,threatening_situation,2,FleeBehavior { fear_threshold: 0.7 },100,50,150,fear,0.950,-0.136,0.206,true
+random_selection,threatening_situation,0,DefaultAcknowledgeBehavior,10,0,10,fear,0.500,-0.014,0.112,false
+random_selection,threatening_situation,1,FleeBehavior { fear_threshold: 0.7 },100,50,150,fear,0.850,-0.121,0.144,true
+random_selection,threatening_situation,2,DefaultAcknowledgeBehavior,10,0,10,fear,0.950,-0.136,0.206,false
+emotion_modulated,provocative_interaction,0,ThoughtfulPauseBehavior,12,0,12,anger,0.300,-0.071,0.062,false
+emotion_modulated,provocative_interaction,1,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.600,-0.143,0.125,true
+emotion_modulated,provocative_interaction,2,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.850,-0.193,0.169,true
+fixed_priority,provocative_interaction,0,JoyfulBehavior,50,0,50,anger,0.300,-0.071,0.062,false
+fixed_priority,provocative_interaction,1,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.600,-0.143,0.125,true
+fixed_priority,provocative_interaction,2,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.850,-0.193,0.169,true
+random_selection,provocative_interaction,0,DefaultAcknowledgeBehavior,10,0,10,anger,0.300,-0.071,0.062,false
+random_selection,provocative_interaction,1,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.600,-0.143,0.125,true
+random_selection,provocative_interaction,2,ThoughtfulPauseBehavior,12,0,12,anger,0.850,-0.193,0.169,false
+emotion_modulated,mixed_emotions,0,ThoughtfulPauseBehavior,12,0,12,fear,0.600,-0.157,0.138,false
+emotion_modulated,mixed_emotions,1,JoyfulBehavior,50,40,90,joy,0.900,0.086,0.150,true
+emotion_modulated,mixed_emotions,2,ConfusedBehavior,15,0,15,surprise,0.700,0.086,0.162,false
+fixed_priority,mixed_emotions,0,FleeBehavior { fear_threshold: 0.7 },100,0,100,fear,0.600,-0.157,0.138,true
+fixed_priority,mixed_emotions,1,FriendlyBehavior { min_valence: 0.3 },60,0,60,joy,0.900,0.086,0.150,false
+fixed_priority,mixed_emotions,2,JoyfulBehavior,50,0,50,surprise,0.700,0.086,0.162,false
+random_selection,mixed_emotions,0,DefaultAcknowledgeBehavior,10,0,10,fear,0.600,-0.157,0.138,false
+random_selection,mixed_emotions,1,ThoughtfulPauseBehavior,12,0,12,joy,0.900,0.086,0.150,false
+random_selection,mixed_emotions,2,DefaultAcknowledgeBehavior,10,0,10,surprise,0.700,0.086,0.162,false
+emotion_modulated,escalation_and_resolution,0,NeutralGreetingBehavior,20,0,20,trust,0.600,0.086,0.075,false
+emotion_modulated,escalation_and_resolution,1,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.700,-0.029,0.150,true
+emotion_modulated,escalation_and_resolution,2,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.900,-0.214,0.188,true
+emotion_modulated,escalation_and_resolution,3,ThoughtfulPauseBehavior,12,0,12,anger,0.400,-0.071,0.112,false
+emotion_modulated,escalation_and_resolution,4,ThoughtfulPauseBehavior,12,0,12,trust,0.500,0.114,0.100,false
+fixed_priority,escalation_and_resolution,0,FriendlyBehavior { min_valence: 0.3 },60,0,60,trust,0.600,0.086,0.075,true
+fixed_priority,escalation_and_resolution,1,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.700,-0.029,0.150,true
+fixed_priority,escalation_and_resolution,2,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.900,-0.214,0.188,true
+fixed_priority,escalation_and_resolution,3,FriendlyBehavior { min_valence: 0.3 },60,0,60,anger,0.400,-0.071,0.112,true
+fixed_priority,escalation_and_resolution,4,FriendlyBehavior { min_valence: 0.3 },60,0,60,trust,0.500,0.114,0.100,true
+random_selection,escalation_and_resolution,0,ThoughtfulPauseBehavior,12,0,12,trust,0.600,0.086,0.075,false
+random_selection,escalation_and_resolution,1,DefaultAcknowledgeBehavior,10,0,10,anger,0.700,-0.029,0.150,false
+random_selection,escalation_and_resolution,2,AggressiveBehavior { anger_threshold: 0.6 },80,0,80,anger,0.900,-0.214,0.188,true
+random_selection,escalation_and_resolution,3,ThoughtfulPauseBehavior,12,0,12,anger,0.400,-0.071,0.112,false
+random_selection,escalation_and_resolution,4,ThoughtfulPauseBehavior,12,0,12,trust,0.500,0.114,0.100,false

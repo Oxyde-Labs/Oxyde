@@ -31,17 +31,10 @@ impl FleeBehavior {
 #[async_trait]
 impl Behavior for FleeBehavior {
     async fn matches_intent(&self, intent: &Intent) -> bool {
-        // Flee can trigger on any threatening intent - check raw input and keywords
-        let input_lower = intent.raw_input.to_lowercase();
-        let has_threat_keyword = intent.keywords.iter().any(|k| {
-            let k_lower = k.to_lowercase();
-            k_lower.contains("threat") || k_lower.contains("attack") || k_lower.contains("danger")
-        });
+        use crate::oxyde_game::intent::IntentType;
 
-        input_lower.contains("threat")
-            || input_lower.contains("attack")
-            || input_lower.contains("danger")
-            || has_threat_keyword
+        // Flee triggers on threats, hostile actions, and demands
+        matches!(intent.intent_type, IntentType::Threat | IntentType::Hostile | IntentType::Demand)
     }
 
     async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
@@ -103,19 +96,10 @@ impl AggressiveBehavior {
 #[async_trait]
 impl Behavior for AggressiveBehavior {
     async fn matches_intent(&self, intent: &Intent) -> bool {
-        // Aggression can trigger on insults, challenges, or confrontations
-        let input_lower = intent.raw_input.to_lowercase();
-        let has_aggressive_keyword = intent.keywords.iter().any(|k| {
-            let k_lower = k.to_lowercase();
-            k_lower.contains("insult") || k_lower.contains("challenge")
-                || k_lower.contains("confront") || k_lower.contains("provoke")
-        });
+        use crate::oxyde_game::intent::IntentType;
 
-        input_lower.contains("insult")
-            || input_lower.contains("challenge")
-            || input_lower.contains("confront")
-            || input_lower.contains("provoke")
-            || has_aggressive_keyword
+        // Aggressive response to hostile actions, threats, and demands
+        matches!(intent.intent_type, IntentType::Hostile | IntentType::Threat | IntentType::Demand)
     }
 
     async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
@@ -178,10 +162,13 @@ impl FriendlyBehavior {
 #[async_trait]
 impl Behavior for FriendlyBehavior {
     async fn matches_intent(&self, intent: &Intent) -> bool {
-        // Friendly behavior for greetings and social interaction
+        // Friendly behavior for positive social interactions
         use crate::oxyde_game::intent::IntentType;
 
-        matches!(intent.intent_type, IntentType::Greeting | IntentType::Chat)
+        matches!(
+            intent.intent_type,
+            IntentType::Greeting | IntentType::Chat | IntentType::Friendly | IntentType::Request
+        )
     }
 
     async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
@@ -239,10 +226,13 @@ impl Default for CautiousBehavior {
 #[async_trait]
 impl Behavior for CautiousBehavior {
     async fn matches_intent(&self, intent: &Intent) -> bool {
-        // Cautious behavior for requests or questions
+        // Cautious behavior for queries, questions, and uncertain situations
         use crate::oxyde_game::intent::IntentType;
 
-        matches!(intent.intent_type, IntentType::Question | IntentType::Command)
+        matches!(
+            intent.intent_type,
+            IntentType::Question | IntentType::Query | IntentType::Command | IntentType::Request
+        )
     }
 
     async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
@@ -289,9 +279,13 @@ impl Default for JoyfulBehavior {
 #[async_trait]
 impl Behavior for JoyfulBehavior {
     async fn matches_intent(&self, intent: &Intent) -> bool {
-        // Any positive interaction when joyful - avoid threats
-        let input_lower = intent.raw_input.to_lowercase();
-        !input_lower.contains("threat") && !input_lower.contains("attack")
+        // Joyful behavior for friendly, positive interactions
+        use crate::oxyde_game::intent::IntentType;
+
+        matches!(
+            intent.intent_type,
+            IntentType::Greeting | IntentType::Friendly | IntentType::Chat | IntentType::Request
+        )
     }
 
     async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
@@ -327,6 +321,194 @@ impl Behavior for JoyfulBehavior {
         } else {
             0
         }
+    }
+}
+
+/// Neutral greeting behavior - always available, low priority fallback
+#[derive(Debug)]
+pub struct NeutralGreetingBehavior;
+
+impl NeutralGreetingBehavior {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for NeutralGreetingBehavior {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Behavior for NeutralGreetingBehavior {
+    async fn matches_intent(&self, intent: &Intent) -> bool {
+        use crate::oxyde_game::intent::IntentType;
+        matches!(intent.intent_type, IntentType::Greeting)
+    }
+
+    async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
+        Ok(BehaviorResult::Response(
+            "Hello.".to_string(),
+        ))
+    }
+
+    fn emotion_trigger(&self) -> Option<EmotionTrigger> {
+        Some(EmotionTrigger::None) // Always available
+    }
+
+    fn priority(&self) -> u32 {
+        20 // Low priority - only if nothing else matches
+    }
+}
+
+/// Confused response - for uncertain situations
+#[derive(Debug)]
+pub struct ConfusedBehavior;
+
+impl ConfusedBehavior {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ConfusedBehavior {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Behavior for ConfusedBehavior {
+    async fn matches_intent(&self, intent: &Intent) -> bool {
+        use crate::oxyde_game::intent::IntentType;
+        matches!(intent.intent_type, IntentType::Question | IntentType::Command)
+    }
+
+    async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
+        Ok(BehaviorResult::Response(
+            "I'm not quite sure what you mean...".to_string(),
+        ))
+    }
+
+    fn emotion_trigger(&self) -> Option<EmotionTrigger> {
+        Some(EmotionTrigger::None) // Always available
+    }
+
+    fn priority(&self) -> u32 {
+        15 // Very low priority
+    }
+}
+
+/// Polite decline - when feeling negative but not aggressive
+#[derive(Debug)]
+pub struct PoliteDeclineBehavior;
+
+impl PoliteDeclineBehavior {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for PoliteDeclineBehavior {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Behavior for PoliteDeclineBehavior {
+    async fn matches_intent(&self, intent: &Intent) -> bool {
+        use crate::oxyde_game::intent::IntentType;
+        matches!(intent.intent_type, IntentType::Command | IntentType::Question)
+    }
+
+    async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
+        Ok(BehaviorResult::Response(
+            "I'd prefer not to right now.".to_string(),
+        ))
+    }
+
+    fn emotion_trigger(&self) -> Option<EmotionTrigger> {
+        Some(EmotionTrigger::Negative) // Only when feeling negative
+    }
+
+    fn priority(&self) -> u32 {
+        18 // Low priority
+    }
+}
+
+/// Thoughtful pause - neutral response for any situation
+#[derive(Debug)]
+pub struct ThoughtfulPauseBehavior;
+
+impl ThoughtfulPauseBehavior {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ThoughtfulPauseBehavior {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Behavior for ThoughtfulPauseBehavior {
+    async fn matches_intent(&self, _intent: &Intent) -> bool {
+        true // Matches everything
+    }
+
+    async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
+        Ok(BehaviorResult::Response(
+            "Let me think about that for a moment...".to_string(),
+        ))
+    }
+
+    fn emotion_trigger(&self) -> Option<EmotionTrigger> {
+        Some(EmotionTrigger::None) // Always available
+    }
+
+    fn priority(&self) -> u32 {
+        12 // Very low - last resort
+    }
+}
+
+/// Default acknowledge - absolute fallback, always responds
+#[derive(Debug)]
+pub struct DefaultAcknowledgeBehavior;
+
+impl DefaultAcknowledgeBehavior {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for DefaultAcknowledgeBehavior {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Behavior for DefaultAcknowledgeBehavior {
+    async fn matches_intent(&self, _intent: &Intent) -> bool {
+        true // Always matches
+    }
+
+    async fn execute(&self, _intent: &Intent, _context: &AgentContext) -> Result<BehaviorResult> {
+        Ok(BehaviorResult::Response(
+            "I understand.".to_string(),
+        ))
+    }
+
+    fn emotion_trigger(&self) -> Option<EmotionTrigger> {
+        Some(EmotionTrigger::None) // Always available
+    }
+
+    fn priority(&self) -> u32 {
+        10 // Lowest priority - absolute fallback
     }
 }
 

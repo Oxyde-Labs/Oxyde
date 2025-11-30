@@ -1,0 +1,31 @@
+BEHAVIOR PRIORITY STUDY - RESULTS
+================================================================================
+
+Overview
+--------------------------------------------------------------------------------
+This experiment compares emotion-modulated behavior selection against
+traditional fixed-priority and random selection approaches.
+
+Key Findings
+--------------------------------------------------------------------------------
+
+RANDOM SELECTION
+  Variety Score: 2.278
+  Match Rate: 70.6%
+  Avg Priority Override: 5.88
+
+EMOTION MODULATED
+  Variety Score: 1.808
+  Match Rate: 47.1%
+  Avg Priority Override: 8.24
+
+FIXED PRIORITY
+  Variety Score: 1.954
+  Match Rate: 76.5%
+  Avg Priority Override: 5.88
+
+Conclusions
+--------------------------------------------------------------------------------
+1. Variety Difference: -7.5%
+2. Match Rate Difference: -29.4%
+3. Emotional Influence: 8.24 avg modifier
