@@ -47,12 +47,10 @@ pub mod memory;
 pub mod oxyde_game;
 
 // Internal modules
-mod error;
 mod utils;
 
-pub use error::OxydeError;
-/// Type alias for Results that use OxydeError
-pub type Result<T> = std::result::Result<T, OxydeError>;
+// Re-export from oxyde-core
+pub use oxyde_core::{OxydeError, Result, AgentContext};
 
 /// Current version of the Oxyde SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

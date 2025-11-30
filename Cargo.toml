@@ -1,4 +1,10 @@
 [dependencies]
+# Workspace crates
+oxyde-core = { path = "crates/oxyde-core", version = "0.1.0" }
+oxyde-emotion = { path = "crates/oxyde-emotion", version = "0.1.0" }
+oxyde-intent = { path = "crates/oxyde-intent", version = "0.1.0" }
+oxyde-behavior = { path = "crates/oxyde-behavior", version = "0.1.0" }
+
 async-trait = "0.1.68"
 env_logger = "0.10.0"
 ffi-support = { version = "0.4.4", optional = true }
@@ -69,4 +75,11 @@ rpath = false      # Disable runtime path
 strip = true       # Strip symbols from binary
 
 [workspace]
-members = ["tools", "examples/rpg_demo"]
+members = [
+    "tools",
+    "examples/rpg_demo",
+    "crates/oxyde-core",
+    "crates/oxyde-emotion",
+    "crates/oxyde-intent",
+    "crates/oxyde-behavior",
+]
