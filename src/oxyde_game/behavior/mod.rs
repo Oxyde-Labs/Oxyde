@@ -5,17 +5,20 @@
 //! - Greeting behavior for proximity detection
 //! - Dialogue behavior for topic-based conversations
 //! - Pathfinding behavior for navigation
+//! - Emotion-aware behaviors that trigger based on emotional state
 
 mod base;
 mod dialogue;
+mod emotional;
 mod greeting;
 mod pathfinding;
 
 pub mod factory;
 
 // Re-export all public types
-pub use base::{Behavior, BehaviorResult, BaseBehavior};
+pub use base::{Behavior, BehaviorResult, BaseBehavior, EmotionInfluence, EmotionTrigger};
 pub use dialogue::DialogueBehavior;
+pub use emotional::{AggressiveBehavior, CautiousBehavior, FleeBehavior, FriendlyBehavior, JoyfulBehavior};
 pub use greeting::GreetingBehavior;
 pub use pathfinding::PathfindingBehavior;
 
