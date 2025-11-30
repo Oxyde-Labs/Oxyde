@@ -3,9 +3,11 @@
 //! This module provides game-specific functionality for integrating Oxyde agents
 //! into games, including behaviors, intent understanding, and engine bindings.
 
-pub mod behavior;
-pub mod emotion;
-pub mod intent;
+// Re-export from workspace crates
+pub use oxyde_behavior as behavior;
+pub use oxyde_emotion as emotion;
+pub use oxyde_intent as intent;
+
 pub mod bindings;
 
 /// Game-specific utilities and extensions

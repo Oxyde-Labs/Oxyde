@@ -17,6 +17,9 @@ use crate::oxyde_game::emotion::EmotionalState;
 use crate::oxyde_game::intent::Intent;
 use crate::Result;
 
+// Re-export AgentContext from oxyde-core so it's available as agent::AgentContext
+pub use crate::AgentContext;
+
 /// Callback for agent events
 pub type AgentCallback = Box<dyn Fn(&Agent, &str) + Send + Sync>;
 
@@ -111,9 +114,6 @@ impl std::fmt::Display for AgentEvent {
         write!(f, "{}", self.as_str())
     }
 }
-
-/// Context data for an agent
-pub type AgentContext = HashMap<String, serde_json::Value>;
 
 /// Agent represents an AI-powered NPC in a game
 pub struct Agent {
