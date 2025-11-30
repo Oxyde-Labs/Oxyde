@@ -23,6 +23,18 @@ pub enum IntentType {
     Chat,
     /// Proximity-based intent (player approaching/nearby)
     Proximity,
+    /// Friendly/positive interaction
+    Friendly,
+    /// Hostile/aggressive interaction
+    Hostile,
+    /// Threat or intimidation
+    Threat,
+    /// Making a request
+    Request,
+    /// Making a demand
+    Demand,
+    /// Query or question (alias for Question)
+    Query,
     /// Custom/unknown intent type
     Custom,
 }
@@ -31,11 +43,16 @@ impl IntentType {
     /// Convert from string representation
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "question" => Self::Question,
+            "question" | "query" => Self::Question,
             "greeting" => Self::Greeting,
             "command" => Self::Command,
             "chat" => Self::Chat,
             "proximity" => Self::Proximity,
+            "friendly" => Self::Friendly,
+            "hostile" => Self::Hostile,
+            "threat" => Self::Threat,
+            "request" => Self::Request,
+            "demand" => Self::Demand,
             _ => Self::Custom,
         }
     }
@@ -48,6 +65,12 @@ impl IntentType {
             Self::Command => "command",
             Self::Chat => "chat",
             Self::Proximity => "proximity",
+            Self::Friendly => "friendly",
+            Self::Hostile => "hostile",
+            Self::Threat => "threat",
+            Self::Request => "request",
+            Self::Demand => "demand",
+            Self::Query => "query",
             Self::Custom => "custom",
         }
     }

@@ -28,6 +28,10 @@ tokio-test = "0.4.2"
 name = "rpg_demo"
 path = "examples/rpg_demo/main.rs"
 
+[[example]]
+name = "behavior_priority_study"
+path = "experiments/behavior_priority_study/main.rs"
+
 [features]
 ai = ["llm", "llmchain", "tch", "reqwest"]
 default = ["reqwest"]

@@ -1,0 +1,35 @@
+[
+  {
+    "strategy": "fixed_priority",
+    "total_turns": 300,
+    "true_override_rate": 0.0,
+    "neutral_fallback_rate": 0.0,
+    "emotional_behavior_rate": 100.0,
+    "stuck_emotions": 13,
+    "behavior_variety": 1.0477998,
+    "trajectory_coherence": 1.0,
+    "avg_emotion_persistence": 10.65
+  },
+  {
+    "strategy": "emotion_modulated",
+    "total_turns": 300,
+    "true_override_rate": 0.0,
+    "neutral_fallback_rate": 59.666668,
+    "emotional_behavior_rate": 40.333332,
+    "stuck_emotions": 8,
+    "behavior_variety": 1.2766422,
+    "trajectory_coherence": 1.0,
+    "avg_emotion_persistence": 9.686792
+  },
+  {
+    "strategy": "random_selection",
+    "total_turns": 300,
+    "true_override_rate": 0.0,
+    "neutral_fallback_rate": 47.666664,
+    "emotional_behavior_rate": 52.333336,
+    "stuck_emotions": 6,
+    "behavior_variety": 2.734714,
+    "trajectory_coherence": 1.0,
+    "avg_emotion_persistence": 9.841216
+  }
+]
