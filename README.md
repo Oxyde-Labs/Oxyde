@@ -95,9 +95,25 @@ rustc -o rpg_demo_standalone rpg_demo_standalone.rs
   - **Perplexity API key** (for real-time knowledge)
 
 ### Installation
+
+#### Option 1: From crates.io (Recommended)
+Add Oxyde to your `Cargo.toml`:
+```toml
+[dependencies]
+oxyde = "0.1.4"
+tokio = { version = "1.0", features = ["full"] }
+```
+
+Or use cargo add:
 ```bash
-git clone <repository-url>
-cd oxyde-ai-sdk
+cargo add oxyde
+cargo add tokio --features full
+```
+
+#### Option 2: From Source (For Development)
+```bash
+git clone https://github.com/Oxyde-Labs/Oxyde.git
+cd Oxyde
 
 # Set up API keys (choose one or more):
 export OPENAI_API_KEY="your-openai-key"           # General purpose AI
@@ -117,10 +133,65 @@ cargo run
 ```
 
 ### Integration in Your Game
-Add Oxyde to your Rust project:
+
+#### Using Published Crate (Recommended)
+Add Oxyde from crates.io:
 ```toml
 [dependencies]
-oxyde = { path = "path/to/oxyde-ai-sdk" }
+oxyde = "0.1.4"
+tokio = { version = "1.0", features = ["full"] }
+```
+
+#### Using Local Development Version
+```toml
+[dependencies]
+oxyde = { path = "../Oxyde" }
+```
+
+#### Standalone Workspace Crates
+
+Oxyde is built as a modular workspace. You can use individual components independently:
+
+```toml
+[dependencies]
+# Use just the emotion system
+oxyde-emotion = "0.1.0"
+
+# Use just the behavior system (includes emotion)
+oxyde-behavior = "0.1.0"
+
+# Use the complete SDK
+oxyde = "0.1.4"
+```
+
+**Available workspace crates:**
+- **`oxyde-emotion`**: Plutchik-based emotion system (zero heavy dependencies)
+- **`oxyde-behavior`**: Emotion-modulated behavior selection system
+- **`oxyde-intent`**: Intent classification for player interactions
+- **`oxyde-core`**: Shared error types and utilities
+
+#### Basic Usage Example
+```rust
+use oxyde::agent::Agent;
+use oxyde::config::AgentConfig;
+use oxyde::oxyde_game::behavior::GreetingBehavior;
+
+#[tokio::main]
+async fn main() -> oxyde::Result<()> {
+    // Create agent configuration
+    let config = AgentConfig::from_file("npc_config.json")?;
+
+    // Build agent with behaviors
+    let mut agent = Agent::builder()
+        .config(config)
+        .add_behavior(GreetingBehavior::new_default())
+        .build()?;
+
+    // Start the agent
+    agent.start().await?;
+
+    Ok(())
+}
 ```
 
 <a id="how-to-experience-the-demo"></a>
