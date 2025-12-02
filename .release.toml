@@ -1,0 +1,12 @@
+sign-commit = false
+sign-tag = false
+push = true
+publish = true
+tag-prefix = "v"
+
+# Enable GitHub releases
+github = { owner = "Oxyde-Labs", repo = "Oxyde" }
+
+# Enable changelog generation in GitHub release
+# cargo-release will create the text automatically
+generate-release-notes = true
