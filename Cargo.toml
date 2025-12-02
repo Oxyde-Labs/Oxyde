@@ -1,9 +1,9 @@
 [dependencies]
-# Workspace crates
-oxyde-core = { path = "crates/oxyde-core", version = "0.1.0" }
-oxyde-emotion = { path = "crates/oxyde-emotion", version = "0.1.0" }
-oxyde-intent = { path = "crates/oxyde-intent", version = "0.1.0" }
-oxyde-behavior = { path = "crates/oxyde-behavior", version = "0.1.0" }
+# Workspace crates - commented out (refactor incomplete, not yet published)
+# oxyde-core = { path = "crates/oxyde-core", version = "0.1.0" }
+# oxyde-emotion = { path = "crates/oxyde-emotion", version = "0.1.0" }
+# oxyde-intent = { path = "crates/oxyde-intent", version = "0.1.0" }
+# oxyde-behavior = { path = "crates/oxyde-behavior", version = "0.1.0" }
 
 async-trait = "0.1.68"
 env_logger = "0.10.0"

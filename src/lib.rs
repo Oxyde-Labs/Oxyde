@@ -48,9 +48,16 @@ pub mod oxyde_game;
 
 // Internal modules
 mod utils;
+mod error;
 
-// Re-export from oxyde-core
-pub use oxyde_core::{OxydeError, Result, AgentContext};
+// Re-export from local error module
+pub use error::OxydeError;
+
+/// Type alias for Results that use OxydeError
+pub type Result<T> = std::result::Result<T, OxydeError>;
+
+/// Agent context (environment state)
+pub type AgentContext = std::collections::HashMap<String, serde_json::Value>;
 
 /// Current version of the Oxyde SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
