@@ -197,7 +197,7 @@ impl Agent {
     }
 
     /// Get the agent's emotion vector as a float array
-    pub async fn emotion_vector(&self) -> [f32; 3] {
+    pub async fn emotion_vector(&self) -> [f32; 8] {
         let emotion_state = self.emotional_state.read().await;
         emotion_state.as_vector()
     }

@@ -34,7 +34,17 @@ namespace Oxyde.Unity
         private static extern IntPtr NativeGetEmotionVector(string agentId);
 
         [DllImport("oxyde", EntryPoint = "oxyde_unity_get_emotion_vector_raw")]
-        private static extern bool NativeGetEmotionVectorRaw(string agentId, out float joy, out float anger, out float fear);
+        private static extern bool NativeGetEmotionVectorRaw(
+            string agentId,
+            out float joy,
+            out float trust,
+            out float fear,
+            out float surprise,
+            out float sadness,
+            out float disgust,
+            out float anger,
+            out float anticipation
+        );
 
         [DllImport("oxyde", EntryPoint = "oxyde_unity_free_string")]
         private static extern void NativeFreeString(IntPtr ptr);
@@ -171,28 +181,38 @@ namespace Oxyde.Unity
         /// Get the agent's emotion vector as a float array
         /// </summary>
         /// <param name="agentId">Agent ID string</param>
-        /// <returns>Float array with emotion values [joy, anger, fear]</returns>
+        /// <returns>Float array with emotion values [joy, trust, fear, surprise, sadness, disgust, anger, anticipation]</returns>
         public static float[] GetAgentEmotionVector(string agentId)
         {
             try
             {
-                float joy, anger, fear;
-                bool success = NativeGetEmotionVectorRaw(agentId, out joy, out anger, out fear);
+                float joy, trust, fear, surprise, sadness, disgust, anger, anticipation;
+                bool success = NativeGetEmotionVectorRaw(
+                    agentId,
+                    out joy,
+                    out trust,
+                    out fear,
+                    out surprise,
+                    out sadness,
+                    out disgust,
+                    out anger,
+                    out anticipation
+                );
                 
                 if (success)
                 {
-                    return new float[] { joy, anger, fear };
+                    return new float[] { joy, trust, fear, surprise, sadness, disgust, anger, anticipation };
                 }
                 else
                 {
                     Debug.LogWarning($"Failed to get emotion vector for agent {agentId}");
-                    return new float[] { 0.0f, 0.0f, 0.0f };
+                    return new float[] { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"Error getting agent emotion vector: {ex.Message}");
-                return new float[] { 0.0f, 0.0f, 0.0f };
+                return new float[] { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
             }
         }
 
@@ -226,9 +246,9 @@ namespace Oxyde.Unity
         public string LastResponse { get; private set; }
 
         /// <summary>
-        /// Current emotion vector [joy, anger, fear]
+        /// Current emotion vector [joy, trust, fear, surprise, sadness, disgust, anger, anticipation]
         /// </summary>
-        public float[] EmotionVector { get; private set; } = new float[] { 0.0f, 0.0f, 0.0f };
+        public float[] EmotionVector { get; private set; } = new float[] { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         
         /// <summary>
         /// Initialize the agent with a configuration file
@@ -403,15 +423,20 @@ namespace Oxyde.Unity
         /// <param name="animator">Animator component to update</param>
         public virtual void UpdateAnimatorWithEmotions(Animator animator)
         {
-            if (animator == null || !IsInitialized || EmotionVector == null || EmotionVector.Length < 3)
+            if (animator == null || !IsInitialized || EmotionVector == null || EmotionVector.Length < 8)
                 return;
 
             try
             {
                 // Set float parameters for each emotion
                 animator.SetFloat("Joy", EmotionVector[0]);
-                animator.SetFloat("Anger", EmotionVector[1]);
+                animator.SetFloat("Trust", EmotionVector[1]);
                 animator.SetFloat("Fear", EmotionVector[2]);
+                animator.SetFloat("Surprise", EmotionVector[3]);
+                animator.SetFloat("Sadness", EmotionVector[4]);
+                animator.SetFloat("Disgust", EmotionVector[5]);
+                animator.SetFloat("Anger", EmotionVector[6]);
+                animator.SetFloat("Anticipation", EmotionVector[7]);
             }
             catch (Exception ex)
             {

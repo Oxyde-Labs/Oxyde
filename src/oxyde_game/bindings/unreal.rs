@@ -109,8 +109,8 @@ impl UnrealBinding {
     ///
     /// # Returns
     ///
-    /// Emotion vector [joy, anger, fear] or an error
-    pub fn get_agent_emotion_vector(&self, agent: &Agent) -> Result<[f32; 3]> {
+    /// Emotion vector [joy, trust, fear, surprise, sadness, disgust, anger, anticipation] or an error
+    pub fn get_agent_emotion_vector(&self, agent: &Agent) -> Result<[f32; 8]> {
         let runtime = tokio::runtime::Runtime::new().map_err(|e| {
             OxydeError::BindingError(format!("Failed to create Tokio runtime: {}", e))
         })?;
@@ -269,7 +269,17 @@ pub mod ffi {
     
     /// Get agent emotion vector
     #[no_mangle]
-    pub extern "C" fn oxyde_unreal_get_emotion_vector(agent_id: FfiStr, out_joy: *mut f32, out_anger: *mut f32, out_fear: *mut f32) -> bool {
+    pub extern "C" fn oxyde_unreal_get_emotion_vector(
+        agent_id: FfiStr,
+        out_joy: *mut f32,
+        out_trust: *mut f32,
+        out_fear: *mut f32,
+        out_surprise: *mut f32,
+        out_sadness: *mut f32,
+        out_disgust: *mut f32,
+        out_anger: *mut f32,
+        out_anticipation: *mut f32
+    ) -> bool {
         let binding = get_binding();
         let agent_id_str = agent_id.into_string();
         
@@ -281,11 +291,26 @@ pub mod ffi {
                             if !out_joy.is_null() {
                                 *out_joy = emotion_vector[0];
                             }
-                            if !out_anger.is_null() {
-                                *out_anger = emotion_vector[1];
+                            if !out_trust.is_null() {
+                                *out_trust = emotion_vector[1];
                             }
                             if !out_fear.is_null() {
                                 *out_fear = emotion_vector[2];
+                            }
+                            if !out_surprise.is_null() {
+                                *out_surprise = emotion_vector[3];
+                            }
+                            if !out_sadness.is_null() {
+                                *out_sadness = emotion_vector[4];
+                            }
+                            if !out_disgust.is_null() {
+                                *out_disgust = emotion_vector[5];
+                            }
+                            if !out_anger.is_null() {
+                                *out_anger = emotion_vector[6];
+                            }
+                            if !out_anticipation.is_null() {
+                                *out_anticipation = emotion_vector[7];
                             }
                         }
                         true

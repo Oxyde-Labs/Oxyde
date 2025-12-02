@@ -221,12 +221,26 @@ impl EmotionalState {
 
     /// Get the emotion vector as a float array
     ///
-    /// This returns a simplified 3D emotion vector used by engine bindings:
+    /// This returns the full 8D emotion vector used by engine bindings:
     /// - Index 0: joy
-    /// - Index 1: anger
+    /// - Index 1: trust
     /// - Index 2: fear
-    pub fn as_vector(&self) -> [f32; 3] {
-        [self.joy, self.anger, self.fear]
+    /// - Index 3: surprise
+    /// - Index 4: sadness
+    /// - Index 5: disgust
+    /// - Index 6: anger
+    /// - Index 7: anticipation
+    pub fn as_vector(&self) -> [f32; 8] {
+        [
+            self.joy,
+            self.trust,
+            self.fear,
+            self.surprise,
+            self.sadness,
+            self.disgust,
+            self.anger,
+            self.anticipation,
+        ]
     }
 }
 

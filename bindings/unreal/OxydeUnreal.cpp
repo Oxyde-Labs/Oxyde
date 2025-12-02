@@ -178,7 +178,17 @@ bool OxydeUnreal::InitializeFunctionPointers()
     return true;
 }
 
-bool OxydeUnreal::GetAgentEmotionVector(const char* AgentId, float* OutJoy, float* OutAnger, float* OutFear)
+bool OxydeUnreal::GetAgentEmotionVector(
+    const char* AgentId,
+    float* OutJoy,
+    float* OutTrust,
+    float* OutFear,
+    float* OutSurprise,
+    float* OutSadness,
+    float* OutDisgust,
+    float* OutAnger,
+    float* OutAnticipation
+)
 {
     if (!GetEmotionVectorFunc)
     {
@@ -186,6 +196,16 @@ bool OxydeUnreal::GetAgentEmotionVector(const char* AgentId, float* OutJoy, floa
         return false;
     }
 
-    return GetEmotionVectorFunc(AgentId, OutJoy, OutAnger, OutFear);
+    return GetEmotionVectorFunc(
+        AgentId,
+        OutJoy,
+        OutTrust,
+        OutFear,
+        OutSurprise,
+        OutSadness,
+        OutDisgust,
+        OutAnger,
+        OutAnticipation
+    );
 }
 
