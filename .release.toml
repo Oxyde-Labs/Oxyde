@@ -2,6 +2,7 @@ sign-commit = false
 sign-tag = false
 push = true
 publish = true
+release = true
 tag-prefix = "v"
 
 # Enable GitHub releases
