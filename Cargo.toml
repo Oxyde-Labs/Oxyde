@@ -62,7 +62,7 @@ license = "MIT"
 name = "oxyde"
 readme = "README.md"
 repository = "https://github.com/Oxyde-Labs/Oxyde"
-version = "0.1.7"
+version = "0.1.8"
 
 [profile.release]
 codegen-units = 1  # Minimize size over compile time
