@@ -7,10 +7,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::agent::AgentContext;
-use crate::oxyde_game::emotion::EmotionalState;
-use crate::oxyde_game::intent::Intent;
-use crate::Result;
+use oxyde_core::{AgentContext, Result};
+use oxyde_emotion::EmotionalState;
+use oxyde_intent::Intent;
 
 /// Emotional trigger condition for behaviors
 #[derive(Debug, Clone, Serialize, Deserialize)]

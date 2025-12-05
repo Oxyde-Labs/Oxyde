@@ -37,7 +37,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_greeting_behavior() {
-        use crate::oxyde_game::intent::{Intent, IntentType};
+        use oxyde_intent::{Intent, IntentType};
 
         let intent = Intent {
             intent_type: IntentType::Proximity,

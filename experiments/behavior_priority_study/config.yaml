@@ -1,0 +1,92 @@
+# Behavior Priority Study Configuration
+#
+# This file contains configurable thresholds and parameters for the emotion-modulated
+# behavior selection system.
+
+# Emotional behavior thresholds
+emotional_behaviors:
+  flee:
+    fear_threshold: 0.7  # Minimum fear level to trigger flee behavior
+    priority: 100
+
+  aggressive:
+    anger_threshold: 0.6  # Minimum anger level to trigger aggressive behavior
+    priority: 90
+
+  friendly:
+    min_valence: 0.3  # Minimum positive valence for friendly behavior
+    priority: 70
+
+  cautious:
+    priority: 60
+
+  joyful:
+    priority: 80
+
+# Neutral fallback behavior priorities
+neutral_behaviors:
+  neutral_greeting:
+    priority: 20  # Low priority - only if emotional behaviors don't match
+
+  confused:
+    priority: 15
+
+  polite_decline:
+    priority: 18
+
+  thoughtful_pause:
+    priority: 12  # Matches any intent
+
+  default_acknowledge:
+    priority: 10  # Absolute fallback
+
+# Emotion trigger system settings
+emotion_triggers:
+  any_emotion:
+    min_intensity: 0.3  # Default minimum intensity for AnyEmotion trigger
+
+  high_arousal:
+    min_arousal: 0.6  # Threshold for HighArousal trigger
+
+  valence_positive:
+    threshold: 0.0  # Values > 0 are positive
+
+  valence_negative:
+    threshold: 0.0  # Values < 0 are negative
+
+# Selection strategy parameters
+selection:
+  # Emotion-modulated strategy
+  emotion_modulated:
+    enable_emotional_gating: true  # Filter by emotion triggers
+    enable_priority_modulation: true  # Apply emotional priority modifiers
+
+  # Fixed priority strategy (baseline)
+  fixed_priority:
+    enable_emotional_gating: false  # No emotion filtering
+    enable_priority_modulation: false  # No emotional modifiers
+
+  # Random selection strategy (baseline)
+  random_selection:
+    enable_emotional_gating: false  # No emotion filtering
+    seed: null  # Null for random seed, or specify integer for reproducibility
+
+# Experiment settings
+experiment:
+  scenarios:
+    - threatening_encounter
+    - joyful_celebration
+    - confusing_situation
+    - friendly_approach
+    - mixed_emotions
+
+  output_directory: "results"
+  save_detailed_results: true
+  save_statistics: true
+  save_csv: true
+
+# Analysis settings
+analysis:
+  compute_entropy: true  # Calculate Shannon entropy for behavior variety
+  compute_match_rate: true  # Calculate percentage of contextually appropriate responses
+  compute_response_rate: true  # Calculate percentage of non-"none" responses

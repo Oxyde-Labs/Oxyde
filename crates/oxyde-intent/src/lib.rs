@@ -7,7 +7,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{OxydeError, Result};
+use oxyde_core::{OxydeError, Result};
 
 /// Type of player intent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
