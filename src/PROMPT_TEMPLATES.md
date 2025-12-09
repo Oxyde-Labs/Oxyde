@@ -200,9 +200,9 @@ Procedural = "Skill"
 Emotional = "Feeling"
 
 [memory_prompts.importance_indicators]
-high = "***"    # or "🔥" or "CRITICAL"
-medium = "**"   # or "⚠️" or "IMPORTANT"
-low = "*"       # or "ℹ️" or "NOTE"
+high = "***" or "CRITICAL"
+medium = "**" or "IMPORTANT"
+low = "*" or "NOTE"
 ```
 
 **Example Output:**
@@ -215,13 +215,6 @@ Relevant memories:
 
 **Customization Examples:**
 
-```toml
-# Emoji-based importance
-[memory_prompts.importance_indicators]
-high = "🔥🔥🔥"
-medium = "⚡⚡"
-low = "💭"
-
 # Text-based importance
 [memory_prompts.importance_indicators]
 high = "[CRITICAL]"
@@ -230,10 +223,10 @@ low = "[NOTE]"
 
 # Custom categories
 [memory_prompts.category_labels]
-Episodic = "📖 Story"
-Semantic = "🧠 Knowledge"
-Procedural = "⚙️ Skill"
-Emotional = "❤️ Feeling"
+Episodic = " Story"
+Semantic = " Knowledge"
+Procedural = " Skill"
+Emotional = "Feeling"
 ```
 
 ---
@@ -394,25 +387,25 @@ let prompts = PromptConfig::from_file_or_default(&prompt_file)?;
 
 ### 1. **Keep Prompts Concise**
 ```toml
-# ❌ Too verbose
+# Too verbose
 base_description = "You are Marcus, and you've been a merchant for 30 years, traveling across the kingdom selling rare artifacts and exotic goods from distant lands. You have a wife and three children back home in the capital city..."
 
-# ✅ Concise and clear
+# Concise and clear
 base_description = "You are {npc_name}, a veteran merchant specializing in rare artifacts and exotic goods."
 ```
 
 ### 2. **Use Template Variables**
 ```toml
-# ❌ Hardcoded
+# Hardcoded
 base_description = "You are Marcus, a merchant..."
 
-# ✅ Reusable
+# Reusable
 base_description = "You are {npc_name}, a {npc_role}..."
 ```
 
 ### 3. **Consistent Formatting**
 ```toml
-# ✅ Clear structure
+# Clear structure
 [system_prompts.merchant]
 base_description = "..."
 behavior_guidelines = [
@@ -616,10 +609,6 @@ A: Create a simple test agent and run conversations in your game.
 - **Issues:** Report bugs or request features on GitHub
 - **Documentation:** Full API docs at docs.rs
 - **Examples:** See `examples/` directory for working samples
-- **Community:** Join our Discord for prompt-writing tips
+- **Community:** Join our Twitter community for prompt-writing tips
 
 ---
-
-## License
-
-Same as Oxyde SDK - MIT or Apache 2.0, your choice.
