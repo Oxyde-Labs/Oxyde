@@ -64,6 +64,7 @@ impl LLMService {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn generate_response(
         &self,
         npc_name: &str,
@@ -81,6 +82,7 @@ impl LLMService {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn generate_emotional_response(
         &self,
         npc_name: &str,
@@ -100,6 +102,7 @@ impl LLMService {
         }
     }
 
+    #[allow(dead_code)]
     async fn openai_request(
         &self,
         npc_name: &str,
@@ -155,6 +158,7 @@ impl LLMService {
     }
 
     async fn groq_request(
+    #[allow(dead_code)]
         &self,
         npc_name: &str,
         npc_role: &str,
@@ -253,6 +257,7 @@ impl LLMService {
 
     async fn openai_emotional_request(
         &self,
+    #[allow(dead_code)]
         npc_name: &str,
         npc_role: &str,
         player_message: &str,
@@ -310,6 +315,7 @@ impl LLMService {
     async fn groq_emotional_request(
         &self,
         npc_name: &str,
+    #[allow(dead_code)]
         npc_role: &str,
         player_message: &str,
         conversation_history: &[String],
@@ -658,6 +664,7 @@ impl LLMService {
         } else {
             format!("\n\nRecent conversation context:\n{}", conversation_history.join("\n"))
         };
+    #[allow(dead_code)]
 
         match npc_role {
             "Merchant" => format!(
@@ -686,6 +693,7 @@ impl LLMService {
             format!("\n\nRecent conversation context:\n{}", conversation_history.join("\n"))
         };
 
+    #[allow(dead_code)]
         let base_prompt = match npc_role {
             "Merchant" => format!(
                 "You are {}, a merchant in a fantasy RPG. You sell various goods and are always looking for business opportunities. You're knowledgeable about trade routes, valuable items, and local commerce.",

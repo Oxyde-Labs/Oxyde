@@ -15,9 +15,18 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[cfg(feature = "vector-memory")]
+use std::sync::Arc;
+
+#[cfg(feature = "vector-memory")]
+use tokio::sync::OnceCell;
+
+#[cfg(feature = "vector-memory")]
 use hnswlib::Hnsw;
 
-use crate::config::{EmbeddingModelType, MemoryConfig};
+use crate::config::MemoryConfig;
+
+#[cfg(feature = "vector-memory")]
+use crate::config::EmbeddingModelType;
 use crate::{OxydeError, Result};
 
 /// Embedding model for vector representations of text
@@ -338,17 +347,25 @@ impl Ord for Memory {
 }
 
 /// Memory system for storing and retrieving agent memories
-#[derive(Debug)]
 pub struct MemorySystem {
     /// Configuration for the memory system
     config: MemoryConfig,
-    
+
     /// Stored memories - includes both short-term and long-term
     memories: RwLock<Vec<Memory>>,
-    
-    /// Embedding model for vector-based memory retrieval
+
+    /// Embedding model for vector-based memory retrieval (lazily initialized)
     #[cfg(feature = "vector-memory")]
-    embedding_model: Option<Arc<RwLock<dyn EmbeddingModel + Send + Sync>>>,
+    embedding_model: OnceCell<Arc<RwLock<dyn EmbeddingModel + Send + Sync>>>,
+}
+
+impl std::fmt::Debug for MemorySystem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemorySystem")
+            .field("config", &self.config)
+            .field("memories", &"<RwLock<Vec<Memory>>>")
+            .finish()
+    }
 }
 
 impl MemorySystem {
@@ -363,19 +380,12 @@ impl MemorySystem {
     /// A new MemorySystem instance
     pub fn new(config: MemoryConfig) -> Self {
         #[cfg(feature = "vector-memory")]
-        let embedding_model = if config.use_embeddings {
-            None // Will be initialized lazily when needed
-        } else {
-            None
-        };
-        
-        #[cfg(feature = "vector-memory")]
         return Self {
             config,
             memories: RwLock::new(Vec::new()),
-            embedding_model,
+            embedding_model: OnceCell::new(),
         };
-        
+
         #[cfg(not(feature = "vector-memory"))]
         return Self {
             config,
@@ -388,44 +398,39 @@ impl MemorySystem {
     /// This is called lazily the first time vector embeddings are needed.
     #[cfg(feature = "vector-memory")]
     async fn ensure_embedding_model(&self) -> Result<()> {
-        if self.config.use_embeddings {
-            let mut model_opt = None;
-            
-            if let Some(model) = &self.embedding_model {
-                // Model already initialized
-                return Ok(());
-            }
-            
-            // Initialize the appropriate model based on configuration
-            match self.config.embedding_model {
-                EmbeddingModelType::MiniBert => {
-                    let model = MiniLMEmbedding::new()?;
-                    model_opt = Some(Arc::new(RwLock::new(model)) as Arc<RwLock<dyn EmbeddingModel + Send + Sync>>);
-                },
-                EmbeddingModelType::DistilBert => {
-                    // Could implement other models here
-                    return Err(OxydeError::MemoryError("DistilBert model not yet implemented".to_string()));
-                },
-                EmbeddingModelType::Custom => {
-                    if let Some(path) = &self.config.custom_model_path {
-                        // Custom model loading would go here
-                        return Err(OxydeError::MemoryError("Custom models not yet supported".to_string()));
-                    } else {
-                        return Err(OxydeError::MemoryError("Custom model path not specified".to_string()));
+        if !self.config.use_embeddings {
+            return Ok(());
+        }
+
+        // Use OnceCell to safely initialize the model exactly once
+        self.embedding_model
+            .get_or_try_init(|| async {
+                // Initialize the appropriate model based on configuration
+                match self.config.embedding_model {
+                    EmbeddingModelType::MiniBert => {
+                        let model = MiniLMEmbedding::new()?;
+                        Ok(Arc::new(RwLock::new(model)) as Arc<RwLock<dyn EmbeddingModel + Send + Sync>>)
+                    }
+                    EmbeddingModelType::DistilBert => {
+                        Err(OxydeError::MemoryError(
+                            "DistilBert model not yet implemented".to_string(),
+                        ))
+                    }
+                    EmbeddingModelType::Custom => {
+                        if self.config.custom_model_path.is_some() {
+                            Err(OxydeError::MemoryError(
+                                "Custom models not yet supported".to_string(),
+                            ))
+                        } else {
+                            Err(OxydeError::MemoryError(
+                                "Custom model path not specified".to_string(),
+                            ))
+                        }
                     }
                 }
-            }
-            
-            // Update the model
-            if let Some(model) = model_opt {
-                let mut embed_model = unsafe {
-                    // This is safe because we're replacing Option<T> with Some(T)
-                    &mut *(&self.embedding_model as *const _ as *mut Option<Arc<RwLock<dyn EmbeddingModel + Send + Sync>>>)
-                };
-                *embed_model = Some(model);
-            }
-        }
-        
+            })
+            .await?;
+
         Ok(())
     }
     
@@ -434,11 +439,12 @@ impl MemorySystem {
         if !self.config.use_embeddings {
             return Ok(None);
         }
-        
+
         // Ensure model is initialized
         self.ensure_embedding_model().await?;
-        
-        if let Some(model) = &self.embedding_model {
+
+        // Get the initialized model from OnceCell
+        if let Some(model) = self.embedding_model.get() {
             let model = model.read().await;
             let embedding = model.embed(text)?;
             Ok(Some(embedding))
@@ -456,7 +462,7 @@ impl MemorySystem {
     /// # Returns
     ///
     /// Success or error
-    pub async fn add(&self, memory: Memory) -> Result<()> {
+    pub async fn add(&self, #[cfg_attr(not(feature = "vector-memory"), allow(unused_mut))] mut memory: Memory) -> Result<()> {
         // Generate embedding for the memory if vector embeddings are enabled
         #[cfg(feature = "vector-memory")]
         if self.config.use_embeddings && memory.embedding.is_none() {
@@ -464,7 +470,7 @@ impl MemorySystem {
                 memory.embedding = Some(embedding);
             }
         }
-        
+
         let mut memories = self.memories.write().await;
         
         // Check if we need to remove a memory to stay under capacity
@@ -480,9 +486,12 @@ impl MemorySystem {
                     .enumerate()
                     .filter(|(_, m)| !m.permanent && m.category == memory.category)
                     .min_by(|(_, a), (_, b)| {
-                        // Consider both importance and access frequency
-                        let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0);
-                        let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0);
+                        // Consider importance, access frequency, and emotional intensity
+                        // High-emotion memories are more resistant to forgetting
+                        let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0)
+                            * (1.0 + a.emotional_intensity);
+                        let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0)
+                            * (1.0 + b.emotional_intensity);
                         a_score.partial_cmp(&b_score).unwrap_or(Ordering::Equal)
                     })
                     .map(|(i, _)| i)
@@ -498,9 +507,12 @@ impl MemorySystem {
                 .enumerate()
                 .filter(|(_, m)| !m.permanent)
                 .min_by(|(_, a), (_, b)| {
-                    // Consider both importance and access frequency
-                    let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0);
-                    let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0);
+                    // Consider importance, access frequency, and emotional intensity
+                    // High-emotion memories are more resistant to forgetting
+                    let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0)
+                        * (1.0 + a.emotional_intensity);
+                    let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0)
+                        * (1.0 + b.emotional_intensity);
                     a_score.partial_cmp(&b_score).unwrap_or(Ordering::Equal)
                 })
                 .map(|(i, _)| i)
@@ -820,6 +832,181 @@ impl MemorySystem {
     pub async fn count(&self) -> usize {
         self.memories.read().await.len()
     }
+
+    /// Retrieve memories by emotional valence range
+    ///
+    /// # Arguments
+    ///
+    /// * `min_valence` - Minimum emotional valence (-1.0 to 1.0)
+    /// * `max_valence` - Maximum emotional valence (-1.0 to 1.0)
+    /// * `limit` - Maximum number of memories to return
+    ///
+    /// # Returns
+    ///
+    /// Vector of memories within the valence range, sorted by emotional intensity
+    pub async fn retrieve_by_emotion(&self, min_valence: f64, max_valence: f64, limit: usize) -> Vec<Memory> {
+        let mut memories = self.memories.write().await;
+
+        // Filter memories within valence range
+        let mut matching: Vec<Memory> = memories.iter()
+            .filter(|m| m.emotional_valence >= min_valence && m.emotional_valence <= max_valence)
+            .cloned()
+            .collect();
+
+        // Sort by emotional intensity (descending) for most emotionally charged memories first
+        matching.sort_by(|a, b| {
+            b.emotional_intensity.partial_cmp(&a.emotional_intensity)
+                .unwrap_or(Ordering::Equal)
+        });
+
+        // Update last_accessed for retrieved memories
+        for memory in &matching.iter().take(limit).collect::<Vec<_>>() {
+            if let Some(index) = memories.iter().position(|m| m.id == memory.id) {
+                let mut updated = memories[index].clone();
+                updated.touch();
+                memories[index] = updated;
+            }
+        }
+
+        matching.truncate(limit);
+        matching
+    }
+
+    /// Retrieve memories with high emotional intensity
+    ///
+    /// # Arguments
+    ///
+    /// * `min_intensity` - Minimum emotional intensity (0.0 to 1.0)
+    /// * `limit` - Maximum number of memories to return
+    ///
+    /// # Returns
+    ///
+    /// Vector of high-intensity emotional memories, sorted by intensity
+    pub async fn retrieve_by_intensity(&self, min_intensity: f64, limit: usize) -> Vec<Memory> {
+        let mut memories = self.memories.write().await;
+
+        // Filter memories with intensity above threshold
+        let mut matching: Vec<Memory> = memories.iter()
+            .filter(|m| m.emotional_intensity >= min_intensity)
+            .cloned()
+            .collect();
+
+        // Sort by emotional intensity (descending)
+        matching.sort_by(|a, b| {
+            b.emotional_intensity.partial_cmp(&a.emotional_intensity)
+                .unwrap_or(Ordering::Equal)
+        });
+
+        // Update last_accessed for retrieved memories
+        for memory in &matching.iter().take(limit).collect::<Vec<_>>() {
+            if let Some(index) = memories.iter().position(|m| m.id == memory.id) {
+                let mut updated = memories[index].clone();
+                updated.touch();
+                memories[index] = updated;
+            }
+        }
+
+        matching.truncate(limit);
+        matching
+    }
+
+    /// Retrieve memories with mood-congruent recall
+    ///
+    /// Returns memories that match the current emotional state (valence),
+    /// implementing the psychological phenomenon where people recall
+    /// memories that match their current mood.
+    ///
+    /// # Arguments
+    ///
+    /// * `current_valence` - Current emotional valence (-1.0 to 1.0)
+    /// * `query` - Optional query text for content-based filtering
+    /// * `limit` - Maximum number of memories to return
+    ///
+    /// # Returns
+    ///
+    /// Vector of mood-congruent memories
+    pub async fn retrieve_mood_congruent(&self, current_valence: f64, query: Option<&str>, limit: usize) -> Result<Vec<Memory>> {
+        let mut memories = self.memories.write().await;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::from_secs(0))
+            .as_secs();
+
+        #[derive(Debug, Clone, PartialEq)]
+        struct ScoredMemory {
+            score: f64,
+            memory: Memory,
+        }
+
+        impl PartialOrd for ScoredMemory {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                self.score.partial_cmp(&other.score)
+            }
+        }
+
+        impl Eq for ScoredMemory {}
+
+        impl Ord for ScoredMemory {
+            fn cmp(&self, other: &Self) -> Ordering {
+                self.partial_cmp(other).unwrap_or(Ordering::Equal)
+            }
+        }
+
+        let mut scored_memories: BinaryHeap<ScoredMemory> = BinaryHeap::new();
+
+        for memory in memories.iter() {
+            // Calculate mood congruence - how well the memory's valence matches current mood
+            let valence_diff = (memory.emotional_valence - current_valence).abs();
+            let mood_congruence = (1.0 - valence_diff / 2.0).max(0.0); // 0.0 to 1.0, higher is more congruent
+
+            // Weight by emotional intensity - more intense memories are easier to recall
+            let emotion_weight = 0.3 + (0.7 * memory.emotional_intensity);
+
+            // Apply time decay
+            let age_seconds = now.saturating_sub(memory.created_at);
+            let decay_factor = if memory.permanent {
+                1.0
+            } else {
+                (-self.config.decay_rate * (age_seconds as f64 / 86400.0)).exp()
+            };
+
+            // Calculate relevance score
+            let mut score = mood_congruence * emotion_weight * decay_factor * memory.importance;
+
+            // If query provided, also factor in content relevance
+            if let Some(q) = query {
+                let content_relevance = memory.relevance(q, None);
+                score = (score * 0.6) + (content_relevance * 0.4); // 60% emotion, 40% content
+            }
+
+            if score >= self.config.importance_threshold {
+                scored_memories.push(ScoredMemory {
+                    score,
+                    memory: memory.clone(),
+                });
+            }
+        }
+
+        // Extract top memories
+        let mut result = Vec::with_capacity(limit);
+
+        for _ in 0..limit {
+            if let Some(scored_memory) = scored_memories.pop() {
+                // Update last_accessed for this memory
+                if let Some(index) = memories.iter().position(|m| m.id == scored_memory.memory.id) {
+                    let mut updated = memories[index].clone();
+                    updated.touch();
+                    memories[index] = updated;
+                }
+
+                result.push(scored_memory.memory);
+            } else {
+                break;
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -838,6 +1025,8 @@ mod tests {
     
     #[tokio::test]
     async fn test_memory_system() {
+        use crate::config::EmbeddingModelType;
+
         let config = MemoryConfig {
             capacity: 3,
             persistence: false,
@@ -850,7 +1039,7 @@ mod tests {
             embedding_dimension: 384,
             priority_categories: Vec::new(),
         };
-        
+
         let system = MemorySystem::new(config);
         
         // Add memories

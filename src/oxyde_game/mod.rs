@@ -3,7 +3,9 @@
 //! This module provides game-specific functionality for integrating Oxyde agents
 //! into games, including behaviors, intent understanding, and engine bindings.
 
+// Local modules
 pub mod behavior;
+pub mod emotion;
 pub mod intent;
 pub mod bindings;
 

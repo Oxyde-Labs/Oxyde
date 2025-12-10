@@ -1,4 +1,10 @@
 [dependencies]
+# Workspace crates - commented out (refactor incomplete, not yet published)
+# oxyde-core = { path = "crates/oxyde-core", version = "0.1.0" }
+# oxyde-emotion = { path = "crates/oxyde-emotion", version = "0.1.0" }
+# oxyde-intent = { path = "crates/oxyde-intent", version = "0.1.0" }
+# oxyde-behavior = { path = "crates/oxyde-behavior", version = "0.1.0" }
+
 async-trait = "0.1.68"
 env_logger = "0.10.0"
 ffi-support = { version = "0.4.4", optional = true }
@@ -9,6 +15,7 @@ llmchain = { version = "0.1.3", optional = true }
 log = "0.4.17"
 ndarray = "0.15.6"
 rand = "0.8.5"
+regex = "1.10.2"
 reqwest = { version = "0.11.18", features = ["json"], optional = true }
 rust-bert = { version = "0.21.0", optional = true, default-features = false }
 serde = { version = "1.0.163", features = ["derive"] }
@@ -28,6 +35,10 @@ tokio-test = "0.4.2"
 name = "rpg_demo"
 path = "examples/rpg_demo/main.rs"
 
+[[example]]
+name = "behavior_priority_study"
+path = "experiments/behavior_priority_study/main.rs"
+
 [features]
 ai = ["llm", "llmchain", "tch", "reqwest"]
 default = ["reqwest"]
@@ -39,6 +50,7 @@ wasm = ["wasm-bindgen"]
 
 [lib]
 name = "oxyde"
+crate-type = ["rlib", "cdylib"]
 path = "src/lib.rs"
 
 [package]
@@ -51,7 +63,7 @@ license = "MIT"
 name = "oxyde"
 readme = "README.md"
 repository = "https://github.com/Oxyde-Labs/Oxyde"
-version = "0.1.3"
+version = "0.1.8"
 
 [profile.release]
 codegen-units = 1  # Minimize size over compile time
@@ -65,4 +77,11 @@ rpath = false      # Disable runtime path
 strip = true       # Strip symbols from binary
 
 [workspace]
-members = ["tools", "examples/rpg_demo"]
+members = [
+    "tools",
+    "examples/rpg_demo",
+    "crates/oxyde-core",
+    "crates/oxyde-emotion",
+    "crates/oxyde-intent",
+    "crates/oxyde-behavior",
+]
