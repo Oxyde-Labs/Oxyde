@@ -45,9 +45,6 @@ path = "experiments/behavior_priority_study/main.rs"
 name = "tts_demo"
 path = "examples/tts_demo/src/main.rs"
 
-[[example]]
-name = "config_demo"
-path = "examples/config_demo/main.rs"
 
 [features]
 ai = ["llm", "llmchain", "tch", "reqwest"]
