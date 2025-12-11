@@ -21,6 +21,9 @@ namespace Oxyde.Unity
         [DllImport("oxyde", EntryPoint = "oxyde_unity_create_agent")]
         private static extern IntPtr NativeCreateAgent(string configPath);
 
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_create_agent_from_json")]
+        private static extern IntPtr NativeCreateAgentFromJson(string jsonConfig);
+
         [DllImport("oxyde", EntryPoint = "oxyde_unity_update_agent")]
         private static extern bool NativeUpdateAgent(string agentId, string contextJson);
 
@@ -48,6 +51,31 @@ namespace Oxyde.Unity
 
         [DllImport("oxyde", EntryPoint = "oxyde_unity_free_string")]
         private static extern void NativeFreeString(IntPtr ptr);
+
+        // Memory System
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_add_memory")]
+        private static extern bool NativeAddMemory(string agentId, string category, string content, double importance);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_add_emotional_memory")]
+        private static extern bool NativeAddEmotionalMemory(string agentId, string category, string content, double importance, double valence, double intensity);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_get_memory_count")]
+        private static extern uint NativeGetMemoryCount(string agentId);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_clear_memories")]
+        private static extern uint NativeClearMemories(string agentId);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_get_memories_by_category")]
+        private static extern IntPtr NativeGetMemoriesByCategory(string agentId, string category);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_retrieve_relevant_memories")]
+        private static extern IntPtr NativeRetrieveRelevantMemories(string agentId, string query, uint limit);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_forget_memory")]
+        private static extern bool NativeForgetMemory(string agentId, string memoryId);
+
+        [DllImport("oxyde", EntryPoint = "oxyde_unity_forget_memories_by_category")]
+        private static extern uint NativeForgetMemoriesByCategory(string agentId, string category);
 
         #endregion
 
@@ -115,6 +143,62 @@ namespace Oxyde.Unity
             catch (Exception ex)
             {
                 Debug.LogError($"Error creating agent: {ex.Message}");
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Create a new agent from a configuration JSON string
+        /// </summary>
+        /// <param name="jsonConfig">The agent configuration as a JSON string</param>
+        /// <returns>Agent ID string or empty if failed</returns>
+        public static string CreateAgentFromJson(string jsonConfig)
+        {
+            try
+            {
+                IntPtr resultPtr = NativeCreateAgentFromJson(jsonConfig);
+                string agentId = PtrToStringAndFree(resultPtr);
+                
+                if (string.IsNullOrEmpty(agentId))
+                {
+                    Debug.LogError("Failed to create agent from JSON config");
+                }
+                else
+                {
+                    Debug.Log($"Created agent with ID: {agentId}");
+                }
+                
+                return agentId;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error creating agent from JSON: {ex.Message}");
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Create a new agent from a configuration file located in the Resources folder.
+        /// This is the easiest way to create an agent in Unity.
+        /// </summary>
+        /// <param name="resourcePath">Path to the config file relative to Resources folder (without extension)</param>
+        /// <returns>Agent ID string or empty if failed</returns>
+        public static string CreateAgentFromResource(string resourcePath)
+        {
+            try
+            {
+                TextAsset configAsset = Resources.Load<TextAsset>(resourcePath);
+                if (configAsset == null)
+                {
+                    Debug.LogError($"Could not find config file in Resources: {resourcePath}");
+                    return string.Empty;
+                }
+                
+                return CreateAgentFromJson(configAsset.text);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error creating agent from resource: {ex.Message}");
                 return string.Empty;
             }
         }
@@ -216,9 +300,228 @@ namespace Oxyde.Unity
             }
         }
 
+        // ==================== Memory System ====================
+
+        /// <summary>
+        /// Memory category types
+        /// </summary>
+        public enum MemoryCategory
+        {
+            Episodic,    // Personal experiences and events
+            Semantic,    // Facts and knowledge
+            Procedural,  // Skills and how-to knowledge
+            Emotional    // Emotionally charged memories
+        }
+
+        /// <summary>
+        /// Represents a single memory
+        /// </summary>
+        public class Memory
+        {
+            public string id;
+            public string category;
+            public string content;
+            public double importance;
+            public double? valence;      // Optional: -1.0 to 1.0
+            public double? intensity;    // Optional: 0.0 to 1.0
+            public List<string> tags;
+            public long timestamp;
+        }
+
+        /// <summary>
+        /// Add a memory to an agent's memory system
+        /// </summary>
+        public static bool AddMemory(string agentId, MemoryCategory category, string content, double importance = 0.5)
+        {
+            try
+            {
+                return NativeAddMemory(agentId, category.ToString().ToLower(), content, importance);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error adding memory: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Add an emotional memory to an agent's memory system
+        /// </summary>
+        public static bool AddEmotionalMemory(string agentId, MemoryCategory category, string content, 
+            double importance, double valence, double intensity)
+        {
+            try
+            {
+                return NativeAddEmotionalMemory(agentId, category.ToString().ToLower(), content, 
+                    importance, valence, intensity);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error adding emotional memory: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Get the number of memories stored by an agent
+        /// </summary>
+        public static uint GetMemoryCount(string agentId)
+        {
+            try
+            {
+                return NativeGetMemoryCount(agentId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error getting memory count: {ex.Message}");
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Clear all non-permanent memories from an agent
+        /// </summary>
+        public static uint ClearMemories(string agentId)
+        {
+            try
+            {
+                return NativeClearMemories(agentId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error clearing memories: {ex.Message}");
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Get memories by category
+        /// </summary>
+        public static List<Memory> GetMemoriesByCategory(string agentId, MemoryCategory category)
+        {
+            try
+            {
+                IntPtr resultPtr = NativeGetMemoriesByCategory(agentId, category.ToString().ToLower());
+                string json = PtrToStringAndFree(resultPtr);
+                
+                if (string.IsNullOrEmpty(json) || json == "[]")
+                    return new List<Memory>();
+                    
+                return JsonConvert.DeserializeObject<List<Memory>>(json) ?? new List<Memory>();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error getting memories by category: {ex.Message}");
+                return new List<Memory>();
+            }
+        }
+
+        /// <summary>
+        /// Retrieve memories relevant to a query
+        /// </summary>
+        public static List<Memory> RetrieveRelevantMemories(string agentId, string query, uint limit = 5)
+        {
+            try
+            {
+                IntPtr resultPtr = NativeRetrieveRelevantMemories(agentId, query, limit);
+                string json = PtrToStringAndFree(resultPtr);
+                
+                if (string.IsNullOrEmpty(json) || json == "[]")
+                    return new List<Memory>();
+                    
+                return JsonConvert.DeserializeObject<List<Memory>>(json) ?? new List<Memory>();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error retrieving relevant memories: {ex.Message}");
+                return new List<Memory>();
+            }
+        }
+
+        /// <summary>
+        /// Forget a specific memory by ID
+        /// </summary>
+        public static bool ForgetMemory(string agentId, string memoryId)
+        {
+            try
+            {
+                return NativeForgetMemory(agentId, memoryId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error forgetting memory: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Forget all memories of a specific category
+        /// </summary>
+        public static uint ForgetMemoriesByCategory(string agentId, MemoryCategory category)
+        {
+            try
+            {
+                return NativeForgetMemoriesByCategory(agentId, category.ToString().ToLower());
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error forgetting memories by category: {ex.Message}");
+                return 0;
+            }
+        }
 
         #endregion
     }
+
+#if !OXYDE_DISABLE_BUILTIN_MANAGER
+    /// <summary>
+    /// Minimal in-file manager so the bindings work without adding a separate script.
+    /// You can disable this by defining OXYDE_DISABLE_BUILTIN_MANAGER in your project settings.
+    /// </summary>
+    public class OxydeAgentManager : MonoBehaviour
+    {
+        public static OxydeAgentManager Instance { get; private set; }
+        private readonly List<OxydeAgent> agents = new List<OxydeAgent>();
+
+        private void Awake()
+        {
+            if (Instance == null)
+            {
+                Instance = this;
+                DontDestroyOnLoad(gameObject);
+                OxydeUnity.Init();
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
+        }
+
+        public void RegisterAgent(OxydeAgent agent)
+        {
+            if (agent != null && !agents.Contains(agent))
+            {
+                agents.Add(agent);
+            }
+        }
+
+        public void UnregisterAgent(OxydeAgent agent)
+        {
+            if (agent != null)
+            {
+                agents.Remove(agent);
+            }
+        }
+
+        public void UpdateAgentContext(Transform player, Dictionary<string, object> additionalContext = null)
+        {
+            foreach (var agent in agents)
+            {
+                agent.UpdatePlayerContext(player, additionalContext);
+            }
+        }
+    }
+#endif
 
     /// <summary>
     /// Base class for Oxyde agents in Unity

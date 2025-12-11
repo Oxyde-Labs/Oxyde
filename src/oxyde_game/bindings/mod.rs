@@ -12,6 +12,7 @@ pub mod unity;
 pub mod unreal;
 pub mod wasm;
 
+use std::sync::Arc;
 use crate::agent::Agent;
 use crate::config::AgentConfig;
 use crate::{OxydeError, Result};
@@ -27,7 +28,18 @@ pub trait EngineBinding {
     /// # Returns
     ///
     /// A new agent instance or an error
-    fn create_agent(&self, config_path: &str) -> Result<Agent>;
+    fn create_agent(&self, config_path: &str) -> Result<Arc<Agent>>;
+
+    /// Create a new agent from a configuration JSON string
+    ///
+    /// # Arguments
+    ///
+    /// * `json_config` - The agent configuration as a JSON string
+    ///
+    /// # Returns
+    ///
+    /// A new agent instance or an error
+    fn create_agent_from_json(&self, json_config: &str) -> Result<Arc<Agent>>;
     
     /// Update an agent with new context data
     ///
@@ -73,6 +85,21 @@ pub trait EngineBinding {
 pub fn load_agent_config(config_path: &str) -> Result<AgentConfig> {
     AgentConfig::from_file(config_path).map_err(|e| {
         OxydeError::BindingError(format!("Failed to load agent config: {}", e))
+    })
+}
+
+/// Helper function to parse agent configuration from JSON string
+///
+/// # Arguments
+///
+/// * `json` - JSON string containing the agent configuration
+///
+/// # Returns
+///
+/// An agent configuration or an error
+pub fn parse_agent_config_json(json: &str) -> Result<AgentConfig> {
+    serde_json::from_str(json).map_err(|e| {
+        OxydeError::BindingError(format!("Failed to parse agent config JSON: {}", e))
     })
 }
 
