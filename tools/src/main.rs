@@ -161,6 +161,11 @@ async fn create_agent_config(name: &str, role: &str, output: &str) -> Result<()>
         memory: MemoryConfig::default(),
         inference: InferenceConfig::default(),
         behavior: create_default_behaviors(),
+        tts: None,
+        moderation: oxyde::config::ModerationConfig {
+            enabled: false,
+            ..Default::default()
+        }
     };
     
     // Determine output format

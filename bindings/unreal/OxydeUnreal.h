@@ -4,6 +4,10 @@
 
 #include "CoreMinimal.h"
 
+#ifndef OXYDE_API
+#define OXYDE_API
+#endif
+
 /**
  * C++ bindings for the Oxyde SDK in Unreal Engine
  */
@@ -46,6 +50,32 @@ public:
      */
     static FString GetAgentState(const char* AgentId);
 
+    /**
+     * Get the agent's emotion vector
+     * @param AgentId Agent ID string
+     * @param OutJoy Output for joy value (-1.0 to 1.0)
+     * @param OutTrust Output for trust value (-1.0 to 1.0)
+     * @param OutFear Output for fear value (-1.0 to 1.0)
+     * @param OutSurprise Output for surprise value (-1.0 to 1.0)
+     * @param OutSadness Output for sadness value (-1.0 to 1.0)
+     * @param OutDisgust Output for disgust value (-1.0 to 1.0)
+     * @param OutAnger Output for anger value (-1.0 to 1.0)
+     * @param OutAnticipation Output for anticipation value (-1.0 to 1.0)
+     * @return True if successful
+     */
+    static bool GetAgentEmotionVector(
+        const char* AgentId,
+        float* OutJoy,
+        float* OutTrust,
+        float* OutFear,
+        float* OutSurprise,
+        float* OutSadness,
+        float* OutDisgust,
+        float* OutAnger,
+        float* OutAnticipation
+    );
+
+
 private:
     // Native function pointers
     typedef bool (*InitFuncPtr)();
@@ -53,6 +83,7 @@ private:
     typedef bool (*UpdateAgentFuncPtr)(const char*, const char*);
     typedef const char* (*ProcessInputFuncPtr)(const char*, const char*);
     typedef const char* (*GetAgentStateFuncPtr)(const char*);
+    typedef bool (*GetEmotionVectorFuncPtr)(const char*, float*, float*, float*, float*, float*, float*, float*, float*);
     typedef void (*FreeStringFuncPtr)(const char*);
 
     static InitFuncPtr InitFunc;
@@ -60,6 +91,7 @@ private:
     static UpdateAgentFuncPtr UpdateAgentFunc;
     static ProcessInputFuncPtr ProcessInputFunc;
     static GetAgentStateFuncPtr GetAgentStateFunc;
+    static GetEmotionVectorFuncPtr GetEmotionVectorFunc;
     static FreeStringFuncPtr FreeStringFunc;
 
     // Handle to the dynamic library

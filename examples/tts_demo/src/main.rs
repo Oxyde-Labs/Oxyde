@@ -1,6 +1,7 @@
-use oxyde::audio::{AudioFormat, EmotionalState, TTSConfig, TTSProvider};
+use oxyde::audio::{AudioFormat, TTSConfig, TTSProvider};
 use oxyde::config::{AgentPersonality, InferenceConfig, MemoryConfig};
 use oxyde::{Agent, AgentConfig};
+use oxyde::oxyde_game::emotion::EmotionalState;
 
 use oxyde::oxyde_game::behavior::{DialogueBehavior, GreetingBehavior};
 use std::collections::HashMap;
@@ -45,7 +46,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         inference: InferenceConfig::default(),
         behavior: HashMap::new(),
         tts: Some(tts_config), // Enable TTS
-        prompts: None,
+        moderation: oxyde::config::ModerationConfig {
+            enabled: false,
+            ..Default::default()
+        }
     };
 
     // Create agent with TTS enabled
@@ -159,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Create emotional state based on response content and user input
 fn create_emotions_for_response(response: &str, user_input: &str) -> EmotionalState {
-    let mut emotions = EmotionalState::neutral();
+    let mut emotions = EmotionalState::default();
 
     let response_lower = response.to_lowercase();
     let input_lower = user_input.to_lowercase();
@@ -170,7 +174,7 @@ fn create_emotions_for_response(response: &str, user_input: &str) -> EmotionalSt
         || response_lower.contains("wonderful")
         || response_lower.contains("excellent")
     {
-        emotions.happiness = 0.7;
+        emotions.joy = 0.7;
     }
 
     // Curiosity triggers
@@ -179,12 +183,12 @@ fn create_emotions_for_response(response: &str, user_input: &str) -> EmotionalSt
         || response_lower.contains("what")
         || response_lower.contains("how")
     {
-        emotions.curiosity = 0.6;
+        emotions.anticipation = 0.6;
     }
 
     // Energy based on excitement
     if response_lower.contains("!") || input_lower.contains("adventure") {
-        emotions.energy = 0.5;
+        emotions.surprise = 0.5;
     }
 
     // Trust building
@@ -198,17 +202,16 @@ fn create_emotions_for_response(response: &str, user_input: &str) -> EmotionalSt
         emotions.trust = 0.2;
     }
 
-    emotions.clamp(); // Ensure values are in valid range
+    // emotions.clamp(); // Ensure values are in valid range
     emotions
 }
 
 /// Format emotions for display
 fn format_emotions(emotions: &EmotionalState) -> String {
     let (dominant, level) = emotions.dominant_emotion();
-    let intensity = emotions.intensity();
 
     format!(
-        "{} ({:.1}/1.0), Overall intensity: {:.1}/1.0",
-        dominant, level, intensity
+        "{} ({:.1}/1.0), dominance:",
+        dominant, level
     )
 }
