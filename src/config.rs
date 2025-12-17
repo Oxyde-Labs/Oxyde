@@ -321,9 +321,9 @@ impl AgentConfig {
                 OxydeError::ConfigurationError(format!("Failed to write YAML config: {}", e))
             }),
             Some("toml") => {
-                let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
-                    OxydeError::ConfigurationError(format!("Failed to read TOML config: {}", e))
-                })?;
+                // let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
+                //     OxydeError::ConfigurationError(format!("Failed to read TOML config: {}", e))
+                // })?;
                 toml::to_string(self).map_err(|e| {
                     OxydeError::ConfigurationError(format!("Failed to serialize to TOML: {}", e))
                 }).and_then(|content| {
