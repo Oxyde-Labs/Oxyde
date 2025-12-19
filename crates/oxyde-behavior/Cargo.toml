@@ -10,9 +10,9 @@ keywords = ["gamedev", "npc", "behavior", "emotion", "ai"]
 categories = ["game-development", "simulation"]
 
 [dependencies]
-oxyde-core = { path = "../oxyde-core", version = "0.1.0" }
-oxyde-emotion = { path = "../oxyde-emotion", version = "0.1.0" }
-oxyde-intent = { path = "../oxyde-intent", version = "0.1.0" }
+#oxyde-core = { path = "../oxyde-core", version = "0.1.0" }
+#oxyde-emotion = { path = "../oxyde-emotion", version = "0.1.0" }
+#oxyde-intent = { path = "../oxyde-intent", version = "0.1.0" }
 async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

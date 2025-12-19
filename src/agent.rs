@@ -650,6 +650,80 @@ impl Agent {
     pub fn clone_for_binding(&self) -> Self {
         Self::new(self.config.clone())
     }
+
+    // ==================== Memory System Wrapper Methods ====================
+    // These methods provide direct access to the memory system for FFI bindings
+
+    /// Add a memory to the agent's memory system
+    pub async fn add_memory(
+        &self,
+        category: MemoryCategory,
+        content: &str,
+        importance: f64,
+        tags: Option<Vec<String>>,
+    ) -> Result<()> {
+        self.memory.add(Memory::new(category, content, importance, tags)).await
+    }
+
+    /// Add a memory with emotional context to the agent's memory system
+    pub async fn add_emotional_memory(
+        &self,
+        category: MemoryCategory,
+        content: &str,
+        importance: f64,
+        valence: f64,
+        intensity: f64,
+        tags: Option<Vec<String>>,
+    ) -> Result<()> {
+        self.memory.add(Memory::new_emotional(
+            category,
+            content,
+            importance,
+            valence,
+            intensity,
+            tags
+        )).await
+    }
+
+    /// Get the total number of memories stored
+    pub async fn memory_count(&self) -> usize {
+        self.memory.count().await
+    }
+
+    /// Clear all non-permanent memories
+    pub async fn clear_memories(&self) -> usize {
+        self.memory.clear().await
+    }
+
+    /// Get all memories of a specific category
+    pub async fn get_memories_by_category(&self, category: MemoryCategory) -> Vec<Memory> {
+        self.memory.get_by_category(category).await
+    }
+
+    /// Retrieve memories relevant to a query
+    pub async fn retrieve_relevant_memories(&self, query: &str, limit: usize) -> Result<Vec<Memory>> {
+        self.memory.retrieve_relevant(query, limit, None).await
+    }
+
+    /// Forget a specific memory by ID
+    pub async fn forget_memory(&self, memory_id: &str) -> Result<()> {
+        self.memory.forget(memory_id).await
+    }
+
+    /// Forget all memories of a specific category
+    pub async fn forget_memories_by_category(&self, category: MemoryCategory) -> usize {
+        self.memory.forget_by_category(category).await
+    }
+
+    /// Check if a memory exists by ID
+    pub async fn has_memory(&self, memory_id: &str) -> bool {
+        self.memory.get(memory_id).await.is_some()
+    }
+
+    /// Get a specific memory by ID
+    pub async fn get_memory(&self, memory_id: &str) -> Option<Memory> {
+        self.memory.get(memory_id).await
+    }
 }
 
 impl std::fmt::Debug for Agent {

@@ -4,18 +4,16 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::ffi::CString;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[cfg(feature = "unreal")]
 use ffi_support::FfiStr;
-use std::ffi::CString;
-use std::os::raw::c_char;
 
 use crate::agent::{Agent, AgentContext};
 use crate::oxyde_game::bindings::{EngineBinding, load_agent_config, parse_context_json};
-use crate::oxyde_game::emotion::EmotionalState;
 use crate::{OxydeError, Result};
 
 /// Unreal-specific agent configuration
@@ -31,7 +29,7 @@ pub struct UnrealAgentConfig {
 /// Unreal Engine binding for Oxyde SDK
 pub struct UnrealBinding {
     /// Registry of created agents
-    agents: Arc<Mutex<HashMap<String, Agent>>>,
+    agents: Arc<Mutex<HashMap<String, Arc<Agent>>>>,
 }
 
 impl UnrealBinding {
@@ -51,12 +49,12 @@ impl UnrealBinding {
     /// # Returns
     ///
     /// The agent or an error if not found
-    pub fn get_agent(&self, id: &str) -> Result<Agent> {
+    pub fn get_agent(&self, id: &str) -> Result<Arc<Agent>> {
         let agents = self.agents.lock().map_err(|e| {
             OxydeError::BindingError(format!("Failed to lock agents mutex: {}", e))
         })?;
         agents.get(id)
-            .map(|agent| agent.clone_for_binding())
+            .cloned()
             .ok_or_else(|| {
                 OxydeError::BindingError(format!("Agent with ID {} not found", id))
             })
@@ -68,7 +66,7 @@ impl UnrealBinding {
     ///
     /// * `id` - Agent unique identifier
     /// * `agent` - Agent to register
-    pub fn register_agent(&self, id: Uuid, agent: Agent) {
+    pub fn register_agent(&self, id: Uuid, agent: Arc<Agent>) {
         match self.agents.lock() {
             Ok(mut agents) => {
                 agents.insert(id.to_string(), agent);
@@ -123,12 +121,22 @@ impl UnrealBinding {
 }
 
 impl EngineBinding for UnrealBinding {
-    fn create_agent(&self, config_path: &str) -> Result<Agent> {
+    fn create_agent(&self, config_path: &str) -> Result<Arc<Agent>> {
         let config = load_agent_config(config_path)?;
-        let agent = Agent::new(config);
+        let agent = Arc::new(Agent::new(config));
         
         // Register the agent
-        self.register_agent(agent.id(), agent.clone_for_binding());
+        self.register_agent(agent.id(), agent.clone());
+        
+        Ok(agent)
+    }
+
+    fn create_agent_from_json(&self, json_config: &str) -> Result<Arc<Agent>> {
+        let config = crate::oxyde_game::bindings::parse_agent_config_json(json_config)?;
+        let agent = Arc::new(Agent::new(config));
+        
+        // Register the agent
+        self.register_agent(agent.id(), agent.clone());
         
         Ok(agent)
     }
@@ -143,7 +151,7 @@ impl EngineBinding for UnrealBinding {
         })?;
         if let Some(stored_agent) = agents.get(&agent_id.to_string()) {
             // Use a cloned reference of the stored agent
-            let agent_ref = stored_agent.clone_for_binding();
+            let agent_ref = stored_agent.clone();
             drop(agents); // Release the lock
 
             tokio::spawn(async move {
@@ -189,6 +197,13 @@ pub mod ffi {
         }
     }
     
+    /// Helper to convert string to raw CString pointer safely
+    fn string_to_ptr(s: String) -> *mut c_char {
+        CString::new(s)
+            .unwrap_or_else(|_| CString::new("").unwrap())
+            .into_raw()
+    }
+
     /// Initialize the Oxyde SDK for Unreal Engine
     #[no_mangle]
     pub extern "C" fn oxyde_unreal_init() -> bool {
@@ -205,10 +220,22 @@ pub mod ffi {
         match binding.create_agent(&config_path_str) {
             Ok(agent) => {
                 let agent_id = agent.id().to_string();
-                // CString::new can only fail if the string contains null bytes, which UUID strings never do
-                CString::new(agent_id)
-                    .expect("Agent ID should not contain null bytes")
-                    .into_raw()
+                string_to_ptr(agent_id)
+            },
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a new agent from a configuration JSON string
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_create_agent_from_json(json_config: FfiStr) -> *mut c_char {
+        let binding = get_binding();
+        let json_config_str = json_config.into_string();
+        
+        match binding.create_agent_from_json(&json_config_str) {
+            Ok(agent) => {
+                let agent_id = agent.id().to_string();
+                string_to_ptr(agent_id)
             },
             Err(_) => std::ptr::null_mut(),
         }
@@ -242,14 +269,14 @@ pub mod ffi {
                 let rt = tokio::runtime::Runtime::new().ok();
                 if let Some(rt) = rt {
                     match rt.block_on(async { agent.process_input(&input_str).await }) {
-                        Ok(response) => CString::new(response).unwrap_or_else(|_| CString::new("Invalid").unwrap()).into_raw(),
-                        Err(_) => CString::new("Error processing input").unwrap().into_raw(),
+                        Ok(response) => string_to_ptr(response),
+                        Err(e) => string_to_ptr(format!("Error processing input: {}", e)),
                     }
                 } else {
-                    CString::new("Error processing input").unwrap().into_raw()
+                    string_to_ptr("Error processing input".to_string())
                 }
             }
-            Err(_) => CString::new("Agent not found").unwrap().into_raw(),
+            Err(_) => string_to_ptr("Agent not found".to_string()),
         }
     }
 
@@ -261,9 +288,9 @@ pub mod ffi {
         match binding.get_agent(&agent_id_str) {
             Ok(agent) => {
                 let state_json = format!("{{\"id\":\"{}\",\"name\":\"{}\"}}", agent.id(), agent.name());
-                CString::new(state_json).unwrap_or_else(|_| CString::new("{}").unwrap()).into_raw()
+                string_to_ptr(state_json)
             }
-            Err(_) => CString::new("{}").unwrap().into_raw(),
+            Err(_) => string_to_ptr("{}".to_string()),
         }
     }
     
@@ -322,6 +349,229 @@ pub mod ffi {
         }
     }
 
+    // ==================== Memory System FFI ====================
+
+    /// Add a memory to an agent's memory system
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_add_memory(
+        agent_id: FfiStr,
+        category: FfiStr,
+        content: FfiStr,
+        importance: f64,
+    ) -> bool {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        let category_str = category.into_string();
+        let content_str = content.into_string();
+        
+        let memory_category = match crate::memory::MemoryCategory::from_str(&category_str) {
+            Some(cat) => cat,
+            None => return false,
+        };
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return false,
+                };
+                runtime.block_on(async {
+                    agent.add_memory(memory_category, &content_str, importance, None).await.is_ok()
+                })
+            },
+            Err(_) => false,
+        }
+    }
+
+    /// Add a memory with emotional context to an agent's memory system
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_add_emotional_memory(
+        agent_id: FfiStr,
+        category: FfiStr,
+        content: FfiStr,
+        importance: f64,
+        valence: f64,
+        intensity: f64,
+    ) -> bool {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        let category_str = category.into_string();
+        let content_str = content.into_string();
+        
+        let memory_category = match crate::memory::MemoryCategory::from_str(&category_str) {
+            Some(cat) => cat,
+            None => return false,
+        };
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return false,
+                };
+                runtime.block_on(async {
+                    agent.add_emotional_memory(
+                        memory_category, &content_str, importance, valence, intensity, None
+                    ).await.is_ok()
+                })
+            },
+            Err(_) => false,
+        }
+    }
+
+    /// Get the number of memories stored by an agent
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_get_memory_count(agent_id: FfiStr) -> u32 {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return 0,
+                };
+                runtime.block_on(async {
+                    agent.memory_count().await as u32
+                })
+            },
+            Err(_) => 0,
+        }
+    }
+
+    /// Clear all non-permanent memories from an agent
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_clear_memories(agent_id: FfiStr) -> u32 {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return 0,
+                };
+                runtime.block_on(async {
+                    agent.clear_memories().await as u32
+                })
+            },
+            Err(_) => 0,
+        }
+    }
+
+    /// Retrieve memories by category as JSON array
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_get_memories_by_category(
+        agent_id: FfiStr,
+        category: FfiStr,
+    ) -> *mut c_char {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        let category_str = category.into_string();
+        
+        let memory_category = match crate::memory::MemoryCategory::from_str(&category_str) {
+            Some(cat) => cat,
+            None => return string_to_ptr("[]".to_string()),
+        };
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return string_to_ptr("[]".to_string()),
+                };
+                let memories = runtime.block_on(async {
+                    agent.get_memories_by_category(memory_category).await
+                });
+                let json = serde_json::to_string(&memories).unwrap_or_else(|_| "[]".to_string());
+                string_to_ptr(json)
+            },
+            Err(_) => string_to_ptr("[]".to_string()),
+        }
+    }
+
+    /// Retrieve memories relevant to a query as JSON array
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_retrieve_relevant_memories(
+        agent_id: FfiStr,
+        query: FfiStr,
+        limit: u32,
+    ) -> *mut c_char {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        let query_str = query.into_string();
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return string_to_ptr("[]".to_string()),
+                };
+                let result = runtime.block_on(async {
+                    agent.retrieve_relevant_memories(&query_str, limit as usize).await
+                });
+                let memories = result.unwrap_or_default();
+                let json = serde_json::to_string(&memories).unwrap_or_else(|_| "[]".to_string());
+                string_to_ptr(json)
+            },
+            Err(_) => string_to_ptr("[]".to_string()),
+        }
+    }
+
+    /// Forget a specific memory by ID
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_forget_memory(
+        agent_id: FfiStr,
+        memory_id: FfiStr,
+    ) -> bool {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        let memory_id_str = memory_id.into_string();
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return false,
+                };
+                runtime.block_on(async {
+                    agent.forget_memory(&memory_id_str).await.is_ok()
+                })
+            },
+            Err(_) => false,
+        }
+    }
+
+    /// Forget all memories of a specific category
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_forget_memories_by_category(
+        agent_id: FfiStr,
+        category: FfiStr,
+    ) -> u32 {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        let category_str = category.into_string();
+        
+        let memory_category = match crate::memory::MemoryCategory::from_str(&category_str) {
+            Some(cat) => cat,
+            None => return 0,
+        };
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return 0,
+                };
+                runtime.block_on(async {
+                    agent.forget_memories_by_category(memory_category).await as u32
+                })
+            },
+            Err(_) => 0,
+        }
+    }
+
+    // ==================== End Memory System FFI ====================
 
     /// Free a string allocated by the Oxyde SDK
     #[no_mangle]

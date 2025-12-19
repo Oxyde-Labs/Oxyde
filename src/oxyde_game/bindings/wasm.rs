@@ -18,7 +18,7 @@ use crate::{OxydeError, Result};
 /// WebAssembly binding for Oxyde SDK
 pub struct WasmBinding {
     /// Registry of created agents
-    agents: Arc<Mutex<HashMap<String, Agent>>>,
+    agents: Arc<Mutex<HashMap<String, Arc<Agent>>>>,
 }
 
 impl WasmBinding {
@@ -38,10 +38,10 @@ impl WasmBinding {
     /// # Returns
     ///
     /// The agent or an error if not found
-    pub fn get_agent(&self, id: &str) -> Result<Agent> {
+    pub fn get_agent(&self, id: &str) -> Result<Arc<Agent>> {
         let agents = self.agents.lock().unwrap();
         agents.get(id)
-            .map(|agent| agent.clone_for_binding())
+            .cloned()
             .ok_or_else(|| {
                 OxydeError::BindingError(format!("Agent with ID {} not found", id))
             })
@@ -53,7 +53,7 @@ impl WasmBinding {
     ///
     /// * `id` - Agent unique identifier
     /// * `agent` - Agent to register
-    pub fn register_agent(&self, id: Uuid, agent: Agent) {
+    pub fn register_agent(&self, id: Uuid, agent: Arc<Agent>) {
         let mut agents = self.agents.lock().unwrap();
         agents.insert(id.to_string(), agent);
     }
@@ -93,12 +93,22 @@ impl WasmBinding {
 }
 
 impl EngineBinding for WasmBinding {
-    fn create_agent(&self, config_path: &str) -> Result<Agent> {
+    fn create_agent(&self, config_path: &str) -> Result<Arc<Agent>> {
         let config = load_agent_config(config_path)?;
-        let agent = Agent::new(config);
+        let agent = Arc::new(Agent::new(config));
         
         // Register the agent
-        self.register_agent(agent.id(), agent.clone_for_binding());
+        self.register_agent(agent.id(), agent.clone());
+        
+        Ok(agent)
+    }
+
+    fn create_agent_from_json(&self, json_config: &str) -> Result<Arc<Agent>> {
+        let config = crate::oxyde_game::bindings::parse_agent_config_json(json_config)?;
+        let agent = Arc::new(Agent::new(config));
+        
+        // Register the agent
+        self.register_agent(agent.id(), agent.clone());
         
         Ok(agent)
     }
@@ -111,7 +121,7 @@ impl EngineBinding for WasmBinding {
         let agents = self.agents.lock().unwrap();
         if let Some(stored_agent) = agents.get(&agent_id.to_string()) {
             // Use a cloned reference of the stored agent
-            let agent_ref = stored_agent.clone_for_binding();
+            let agent_ref = stored_agent.clone();
             drop(agents); // Release the lock
             
             // Create a runtime for the WASM context
@@ -173,6 +183,15 @@ impl OxydeWasm {
     #[wasm_bindgen]
     pub fn create_agent(&self, config_path: &str) -> Result<String, JsError> {
         match self.binding.create_agent(config_path) {
+            Ok(agent) => Ok(agent.id().to_string()),
+            Err(e) => Err(JsError::new(&e.to_string())),
+        }
+    }
+
+    /// Create a new agent from a configuration JSON string
+    #[wasm_bindgen]
+    pub fn create_agent_from_json(&self, json_config: &str) -> Result<String, JsError> {
+        match self.binding.create_agent_from_json(json_config) {
             Ok(agent) => Ok(agent.id().to_string()),
             Err(e) => Err(JsError::new(&e.to_string())),
         }
