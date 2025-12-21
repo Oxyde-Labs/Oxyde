@@ -221,7 +221,7 @@ impl Agent {
         urgency: f32,
     ) -> Result<AudioData> {
         if let Some(tts) = &self.tts_service {
-            tts.synthesize_npc_speech(&self.name, text, emotions, urgency)
+            tts.synthesize_npc_speech(&self.name, text, emotions, urgency, Some(&self.config.language))
                 .await
                 .map_err(|e| {
                     crate::OxydeError::AudioError(TTSError::AudioProcessingError(e.to_string()))
@@ -295,6 +295,7 @@ impl Agent {
                 &serde_json::to_string(&self.config.agent.backstory)?,
                 f64::INFINITY,
                 None,
+                Some(&self.config.language)
             ))
             .await?;
 
@@ -340,12 +341,14 @@ impl Agent {
 
         log::debug!("Agent {} processing input: {}", self.name, input);
 
+        let language = &self.config.language;
+
         // Analyze player intent
-        let intent = Intent::analyze(input).await?;
+        let intent = Intent::analyze(input, Some(&self.inference), language).await?;
 
         // Update memory with player input
         self.memory
-            .add(Memory::new(MemoryCategory::Episodic, input, 1.0, None))
+            .add(Memory::new(MemoryCategory::Episodic, input, 1.0, None, Some(&self.config.language)))
             .await?;
 
         // Find behaviors that match the intent
@@ -387,7 +390,7 @@ impl Agent {
             }
 
             // Get relevant memories
-            let memories = self.memory.retrieve_relevant(input, 5, None).await?;
+            let memories = self.memory.retrieve_relevant(input, 5, None, None).await?;
             
             let system_prompt = self.prompts.generate_system_prompt(
                 &self.name,
@@ -409,12 +412,12 @@ impl Agent {
             let context = self.context.read().await.clone();
             response = self
                 .inference
-                .generate_response(input, &memories, &context, &system_prompt, &memory_context)
+                .generate_response(input, &memories, &context, &system_prompt, &memory_context, Some(language))
                 .await?;
 
             // Store the response in memory
             self.memory
-                .add(Memory::new(MemoryCategory::Semantic, &response, 1.0, None))
+                .add(Memory::new(MemoryCategory::Semantic, &response, 1.0, None, Some(&self.config.language)))
                 .await?;
         }
 
@@ -594,6 +597,7 @@ mod tests {
             behavior: HashMap::new(),
             tts: None, // No TTS for this test
             prompts: Some(PromptConfig::from_bundled_default().unwrap()),
+            language: "en".to_string(),
         };
 
         let agent = Agent::new(config);
@@ -622,6 +626,7 @@ mod tests {
             behavior: HashMap::new(),
             tts: None, // No TTS for this test,
             prompts: None,
+            language: "en".to_string()
         };
 
         // Create agent with builder and add behaviors

@@ -45,7 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         inference: InferenceConfig::default(),
         behavior: HashMap::new(),
         tts: Some(tts_config), // Enable TTS
-        prompts: None
+        prompts: None,
+        language: "en".to_string(),
     };
 
     // Create agent with TTS enabled

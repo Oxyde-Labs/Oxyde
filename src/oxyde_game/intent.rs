@@ -7,7 +7,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{OxydeError, Result};
+use crate::{inference::InferenceEngine, OxydeError, Result};
 
 /// Type of player intent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,7 +101,7 @@ impl Intent {
             keywords,
         }
     }
-    
+
     /// Create a proximity intent
     ///
     /// # Arguments
@@ -119,58 +119,111 @@ impl Intent {
             vec![format!("distance:{}", distance)],
         )
     }
-    
-    /// Create an intent from player chat
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - Player's chat message
-    ///
-    /// # Returns
-    ///
-    /// An Intent based on the chat message
-    pub fn from_chat(text: &str) -> Self {
-        // Extract keywords from the text
-        let keywords = Self::extract_keywords(text);
 
-        // Determine intent type
-        let intent_type = if text.ends_with("?") {
+
+    /// LLM-based intent analysis (language-agnostic)
+    async fn llm_based_analysis(
+        input: &str,
+        engine: &InferenceEngine,
+        language: &str,
+    ) -> Result<Self> {
+        let language_note = if language != "en" {
+            format!(" (Note: Input may be in language code: {})", language)
+        } else {
+            String::new()
+        };
+
+        let prompt = format!(
+            "Classify the intent of this message{}: \"{}\"\n\n\
+            Respond with ONLY ONE of these words: greeting, question, command, chat\n\
+            - greeting: if saying hello, hi, greetings, or similar\n\
+            - question: if asking something (contains ?, what, who, where, when, why, how)\n\
+            - command: if giving an order or request (follow me, attack, go, stop)\n\
+            - chat: if making a statement or general conversation\n\n\
+            Intent:",
+            language_note,
+            input
+        );
+
+        // Use inference engine to classify
+        let response = engine.generate_response(
+            &prompt,
+            &[], 
+            &std::collections::HashMap::new(), 
+            &prompt, 
+            "",
+            Some(language)
+        ).await?;
+
+        let intent_type = IntentType::from_str(response.trim());
+        let keywords = Self::extract_keywords(input);
+
+        Ok(Self::new(
+            intent_type,
+            0.9, // High confidence from LLM
+            input,
+            keywords,
+        ))
+    }
+
+    /// fallback when no LLM .... could be made more robust but focusing on LLM for now
+    fn simple_analysis(input: &str) -> Result<Self> {
+        let keywords = Self::extract_keywords(input);
+        
+        let intent_type = if input.ends_with('?') {
             IntentType::Question
-        } else if Self::is_greeting(text) {
+        } else if input.split_whitespace().count() <= 2 {
             IntentType::Greeting
-        } else if Self::is_command(text) {
+        } else if ["follow", "go", "stop", "attack", "come"]
+            .iter()
+            .any(|cmd| input.to_lowercase().starts_with(cmd))
+        {
             IntentType::Command
         } else {
             IntentType::Chat
         };
 
-        Self::new(
+        Ok(Self::new(
             intent_type,
-            0.8, // Confidence score
-            text,
+            0.6, 
+            input,
             keywords,
-        )
+        ))
     }
-    
+
+
     /// Analyze player input to determine intent
     ///
     /// # Arguments
     ///
     /// * `input` - Raw player input
+    /// * `inference` - Optional inference engine for LLM-based analysis
+    /// * `language` - Language code of the input (e.g., "en" for English)
     ///
     /// # Returns
     ///
     /// An Intent based on the input
-    pub async fn analyze(input: &str) -> Result<Self> {
-        if input.is_empty() {
-            return Err(OxydeError::IntentError("Empty input".to_string()));
-        }
-        
-        // Simple rule-based intent classification
-        // In a real implementation, this would use more sophisticated NLP
-        Ok(Self::from_chat(input))
-    }
     
+    pub async fn analyze(input: &str, inference: Option<&InferenceEngine>, language: &str) -> Result<Self> {
+
+    if input.trim().is_empty() {
+        return Err(OxydeError::IntentError("Empty input".to_string()));
+    }
+
+    if let Some(engine) = inference {
+        match Self::llm_based_analysis(input, engine, language).await {
+            Ok(intent) => return Ok(intent),
+            Err(err) => {
+                log::warn!("LLM intent analysis failed: {}", err);
+            }
+        }
+    }
+
+    Self::simple_analysis(input)
+    }
+
+
+
     /// Extract keywords from text
     ///
     /// # Arguments
@@ -181,108 +234,81 @@ impl Intent {
     ///
     /// Vector of extracted keywords
     pub fn extract_keywords(text: &str) -> Vec<String> {
-        let mut keywords = Vec::new();
-        let stopwords: HashSet<&str> = [
+        // Simple approach: take longer words, skip very common short words
+        let common_short_words: HashSet<&str> = [
+            // English
             "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-            "with", "by", "about", "against", "between", "into", "through",
-            "is", "are", "was", "were", "be", "been", "being",
-            "i", "you", "he", "she", "it", "we", "they",
-            "my", "your", "his", "her", "its", "our", "their",
+            "with", "by", "from", "up", "about", "is", "are", "was", "were",
+            "be", "been", "being", "have", "has", "had", "do", "does", "did",
+            "will", "would", "could", "should", "may", "might", "must",
+            "i", "you", "he", "she", "it", "we", "they", "me", "him", "her",
+            "my", "your", "his", "its", "our", "their",
+           
+            // Spanish
+            "el", "la", "los", "las", "un", "una", "de", "en", "es", "y", "o",
+            
+            // French  
+            "le", "la", "les", "un", "une", "de", "en", "et", "est", "ou",
+            
+            // German
+            "der", "die", "das", "ein", "eine", "und", "ist", "oder",
+            
+            // Japanese 
+            "は", "が", "を", "に", "で", "と", "の", "も", "へ", "から",
         ].iter().cloned().collect();
-        
-        for word in text.split_whitespace() {
-            // Remove punctuation from the word
-            let clean_word = word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
-            if clean_word.len() > 2 && !stopwords.contains(clean_word.as_str()) {
-                keywords.push(clean_word);
-            }
-        }
-        
-        keywords
+
+        text.split_whitespace()
+            .filter_map(|word| {
+                let clean = word
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase();
+                
+           
+                if !clean.is_empty() && !common_short_words.contains(clean.as_str()) {
+                    // Check if it's CJK (Chinese, Japanese, Korean)
+                    let is_cjk = clean.chars().any(|c| {
+                        matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3040}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}' | '\u{AC00}'..='\u{D7AF}')
+                    });
+                    
+                    if is_cjk || clean.len() >= 3 {
+                        Some(clean)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
-    
-    /// Check if text is a greeting
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - Text to check
-    ///
-    /// # Returns
-    ///
-    /// Whether the text is a greeting
-    fn is_greeting(text: &str) -> bool {
-        let greetings = [
-            "hello", "hi", "hey", "greetings", "good morning",
-            "good afternoon", "good evening", "howdy", "sup",
-            "what's up", "hiya",
-        ];
-        
-        let text_lower = text.to_lowercase();
-        // Check if the text starts with a greeting or contains it as a whole word
-        greetings.iter().any(|g| {
-            text_lower.starts_with(g) || 
-            text_lower.split_whitespace().any(|word| word == *g)
-        })
-    }
-    
-    /// Check if text is a command
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - Text to check
-    ///
-    /// # Returns
-    ///
-    /// Whether the text is a command
-    fn is_command(text: &str) -> bool {
-        let command_prefixes = [
-            "follow", "go", "attack", "defend", "run", "wait",
-            "stop", "help", "give", "take", "use", "open",
-            "close", "find", "look", "examine", "talk",
-        ];
-        
-        let text_lower = text.to_lowercase();
-        command_prefixes.iter().any(|c| text_lower.starts_with(c))
-    }
-    
-    /// Check if the intent has a specific keyword
-    ///
-    /// # Arguments
-    ///
-    /// * `keyword` - Keyword to check for
-    ///
-    /// # Returns
-    ///
-    /// Whether the intent contains the keyword
-    pub fn has_keyword(&self, keyword: &str) -> bool {
-        self.keywords.iter().any(|k| k == keyword)
-    }
+
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[test]
-    fn test_intent_from_chat() {
-        let greeting = Intent::from_chat("Hello there!");
+
+    #[tokio::test]
+    async fn test_intent_from_chat() -> Result<()> {
+        let greeting = Intent::analyze("Hello there!", None, "en").await?;
         assert_eq!(greeting.intent_type, IntentType::Greeting);
 
-        let question = Intent::from_chat("What is your name?");
+        let question = Intent::analyze("What is your name?", None, "en").await?;
         assert_eq!(question.intent_type, IntentType::Question);
 
-        let command = Intent::from_chat("follow me");
+        let command = Intent::analyze("follow me", None, "en").await?;
         assert_eq!(command.intent_type, IntentType::Command);
 
-        let chat = Intent::from_chat("I like this village.");
+        let chat = Intent::analyze("I like this village.", None, "en").await?;
         assert_eq!(chat.intent_type, IntentType::Chat);
+        Ok(())
     }
-    
+
     #[test]
     fn test_keyword_extraction() {
         let keywords = Intent::extract_keywords("What is the capital of France?");
         assert!(keywords.contains(&"capital".to_string()));
         assert!(keywords.contains(&"france".to_string()));
-        assert!(!keywords.contains(&"is".to_string())); // Stopword should be filtered
+        assert!(!keywords.contains(&"is".to_string())); 
     }
 }

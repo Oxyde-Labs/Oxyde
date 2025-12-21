@@ -80,6 +80,10 @@ pub struct PromptConfig {
     #[serde(default = "default_version")]
     pub version: String,
 
+    /// Language Code (e.g., "en" for English)
+    #[serde(default = "default_language_code")]
+    pub language: String,
+
     /// System prompt templates by role
     pub system_prompts: HashMap<String, SystemPromptTemplate>,
 
@@ -104,11 +108,32 @@ pub struct PromptConfig {
     pub farewells: HashMap<String, Vec<String>>,
 }
 
+fn default_language_code() -> String {
+    "en".to_string()
+}
+
+// fn default_language_name() -> String {
+//     "English".to_string()
+// }
+
 fn default_version() -> String {
     "1.0".to_string()
 }
 
 impl PromptConfig {
+    /// Get the language instruction for LLM prompts
+    pub fn get_language_instruction(&self) -> String {
+        match self.language.as_str() {
+            "en" => String::new(), // No instruction needed for English
+            "ja" => "Respond in Japanese (日本語で返答してください).".to_string(),
+            "es" => "Responde en español.".to_string(),
+            "fr" => "Répondez en français.".to_string(),
+            "zh" => "用中文回答。".to_string(),
+            "ru" => "Отвечайте на русском языке.".to_string(),
+            _ => format!("Respond in the language with code: {}", self.language),
+        }
+    }
+    
     /// Load the bundled default configuration
     pub fn from_bundled_default() -> Result<Self> {
         // Embed the default prompts.toml at compile time
@@ -217,6 +242,9 @@ impl PromptConfig {
         npc_role: &str,
         conversation_history: &[String],
     ) -> String {
+        
+        let language_instruction = self.get_language_instruction();
+
         let template = self
             .system_prompts
             .get(npc_role)
@@ -248,7 +276,7 @@ impl PromptConfig {
             prompt.push_str(&context_section);
         }
 
-        prompt
+        format!("{}\n\n{}", language_instruction, prompt)
     }
 
     /// Generate an emotional modifier prompt
@@ -442,7 +470,6 @@ impl PromptConfig {
             .cloned()
             .unwrap_or_else(|| format!("importance {:.1}", importance))
     }
-
 }
 
 #[cfg(test)]
@@ -479,7 +506,7 @@ mod tests {
         let deserialized: PromptConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(config.version, deserialized.version);
     }
-    
+
     #[test]
     fn test_from_file_or_default_fallback() {
         // Try to load non-existent file, should fall back to bundled

@@ -1,3 +1,5 @@
+//! Audio module for TTS synthesis and management.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -119,6 +121,7 @@ impl TTSService {
         text: &str,
         emotional_state: &EmotionalState, // Use the main SDK's EmotionalState
         urgency: f32,
+        language: Option<&str>,
     ) -> Result<AudioData, TTSError> {
         // Check cache first
         let cache_key = self.generate_cache_key(npc_name, text, emotional_state);
@@ -146,7 +149,7 @@ impl TTSService {
         // Generate speech with ElevenLabs
         let audio_data = match self.provider {
             TTSProvider::ElevenLabs => {
-                self.elevenlabs_synthesize(&enhanced_text, &voice_settings)
+                self.elevenlabs_synthesize(&enhanced_text, &voice_settings, language)
                     .await?
             }
         };
@@ -262,6 +265,7 @@ impl TTSService {
         &self,
         text: &str,
         settings: &VoiceSettings,
+        language: Option<&str>,
     ) -> Result<AudioData, TTSError> {
         let client = reqwest::Client::new();
         let api_key = std::env::var("ELEVENLABS_API_KEY")
@@ -276,15 +280,22 @@ impl TTSService {
             &settings.voice_id
         };
 
+        let model_id = if language == Some("en") || language.is_none() {
+            "eleven_monolingual_v1"
+        } else {
+            "eleven_multilingual_v2"
+        };
+
         let request_body = serde_json::json!({
             "text": text,
-            "model_id": "eleven_monolingual_v1",
+            "model_id": model_id,
             "voice_settings": {
                 "stability": settings.stability,
                 "similarity_boost": settings.similarity_boost,
                 "style": settings.style_exaggeration,
                 "use_speaker_boost": true
-            }
+            },
+            "language": {"language_code": language.unwrap_or("en")}
         });
 
         let url = format!("https://api.elevenlabs.io/v1/text-to-speech/{}", voice_id);

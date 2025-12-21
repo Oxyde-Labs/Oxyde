@@ -162,6 +162,13 @@ pub struct Memory {
     /// Vector embedding of the memory content (for semantic search)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
+
+    ///Language of the memory content
+    pub language: String,
+}
+
+fn default_memory_language() -> String {
+    "en".to_string()
 }
 
 impl Memory {
@@ -177,7 +184,7 @@ impl Memory {
     /// # Returns
     ///
     /// A new Memory instance
-    pub fn new(category: MemoryCategory, content: &str, importance: f64, tags: Option<Vec<String>>) -> Self {
+    pub fn new(category: MemoryCategory, content: &str, importance: f64, tags: Option<Vec<String>>, language: Option<&str>) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::from_secs(0))
@@ -190,6 +197,7 @@ impl Memory {
             category,
             tags: tags.unwrap_or_default(),
             content: content.to_string(),
+            language: language.unwrap_or("en").to_string(),
             created_at: now,
             last_accessed: now,
             access_count: 0,
@@ -221,9 +229,10 @@ impl Memory {
         importance: f64,
         valence: f64,
         intensity: f64,
-        tags: Option<Vec<String>>
+        tags: Option<Vec<String>>,
+        language: Option<&str>,
     ) -> Self {
-        let mut memory = Self::new(category, content, importance, tags);
+        let mut memory = Self::new(category, content, importance, tags, language);
         memory.emotional_valence = valence.clamp(-1.0, 1.0);
         memory.emotional_intensity = intensity.clamp(0.0, 1.0);
         memory
@@ -614,7 +623,7 @@ impl MemorySystem {
     /// # Returns
     ///
     /// Vector of relevant memories, sorted by relevance
-    pub async fn retrieve_relevant(&self, query: &str, limit: usize, query_embedding: Option<&[f32]>) -> Result<Vec<Memory>> {
+    pub async fn retrieve_relevant(&self, query: &str, limit: usize, query_embedding: Option<&[f32]>, preferred_language: Option<&str>) -> Result<Vec<Memory>> {
         let mut memories = self.memories.write().await;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -675,9 +684,17 @@ impl MemorySystem {
             } else {
                 (-self.config.decay_rate * (age_seconds as f64 / 86400.0)).exp() // 86400 seconds in a day
             };
+
+            let language_bonus = match (&memory.language, preferred_language) {
+                (mem_lang, Some(req_lang)) if mem_lang == req_lang => 1.0,
+                (_, None) => 1.0,
+                _ => 0.4,
+            };
+
+
             
             // Calculate relevance using the enhanced relevance function with embeddings
-            let relevance = memory.relevance(query, query_embedding) * decay_factor * recency_factor;
+            let relevance = memory.relevance(query, query_embedding) * decay_factor * recency_factor * language_bonus;
             
             // Calculate category priority bonus
             let category_priority_bonus = if has_priority_categories {
@@ -691,6 +708,9 @@ impl MemorySystem {
             } else {
                 0.0
             };
+
+            
+
             
             // Add to heap if above threshold
             if relevance >= self.config.importance_threshold {
@@ -834,7 +854,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_memory_creation() {
-        let memory = Memory::new(MemoryCategory::Semantic, "Test content", 0.5, None);
+        let memory = Memory::new(MemoryCategory::Semantic, "Test content", 0.5, None, None);
         assert_eq!(memory.category, MemoryCategory::Semantic);
         assert_eq!(memory.content, "Test content");
         assert_eq!(memory.importance, 0.5);
@@ -862,9 +882,9 @@ mod tests {
         let system = MemorySystem::new(config);
         
         // Add memories
-        system.add(Memory::new(MemoryCategory::Semantic, "The sky is blue", 0.5, Some(vec!["fact".to_string()]))).await.unwrap();
-        system.add(Memory::new(MemoryCategory::Semantic, "Grass is green", 0.3, Some(vec!["fact".to_string()]))).await.unwrap();
-        system.add(Memory::new(MemoryCategory::Semantic, "Water is wet", 0.7, Some(vec!["fact".to_string()]))).await.unwrap();
+        system.add(Memory::new(MemoryCategory::Semantic, "The sky is blue", 0.5, Some(vec!["fact".to_string()]), None)).await.unwrap();
+        system.add(Memory::new(MemoryCategory::Semantic, "Grass is green", 0.3, Some(vec!["fact".to_string()]), None)).await.unwrap();
+        system.add(Memory::new(MemoryCategory::Semantic, "Water is wet", 0.7, Some(vec!["fact".to_string()]), None)).await.unwrap();
         
         // Test count
         assert_eq!(system.count().await, 3);
@@ -878,12 +898,12 @@ mod tests {
         assert_eq!(facts_by_tag.len(), 3);
         
         // Test relevant retrieval
-        let relevant = system.retrieve_relevant("sky color", 2, None).await.unwrap();
+        let relevant = system.retrieve_relevant("sky color", 2, None, Some("en")).await.unwrap();
         assert_eq!(relevant.len(), 1);
         assert!(relevant[0].content.contains("sky"));
         
         // Test memory limit
-        system.add(Memory::new(MemoryCategory::Semantic, "Fire is hot", 0.6, Some(vec!["fact".to_string()]))).await.unwrap();
+        system.add(Memory::new(MemoryCategory::Semantic, "Fire is hot", 0.6, Some(vec!["fact".to_string()]), None)).await.unwrap();
         assert_eq!(system.count().await, 3); // Still 3 due to capacity limit
     }
 }

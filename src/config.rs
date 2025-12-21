@@ -238,6 +238,14 @@ pub struct AgentConfig {
     /// Prompt Configurations
     #[serde(default)]
     pub prompts: Option<PromptConfig>,
+
+    ///Language Configuration
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+fn default_language() -> String {
+    "en".to_string()
 }
 
 impl AgentConfig {
@@ -273,7 +281,7 @@ impl AgentConfig {
                 toml::from_str(&content).map_err(|e| {
                     OxydeError::ConfigurationError(format!("Failed to parse TOML config: {}", e))
                 })?
-            },
+            }
             _ => {
                 return Err(OxydeError::ConfigurationError(
                     "Unknown config file format. Expected .json, .toml, .yaml, or .yml".to_string(),
@@ -283,14 +291,29 @@ impl AgentConfig {
 
         // If no prompts are embedded, try to load from prompts.toml
         if config.prompts.is_none() {
+            let prompts_filename = format!("prompts_{}.toml", config.language);
+
             let prompts_path = path
                 .as_ref()
                 .parent()
-                .map(|p| p.join("prompts.toml"))
-                .unwrap_or_else(|| PathBuf::from("prompts.toml"));
-        // config.prompts = Some(PromptConfig::from_file_or_default(prompts_path)?);
+                .map(|p| p.join(&prompts_filename))
+                .unwrap_or_else(|| PathBuf::from(&prompts_filename));
+            // config.prompts = Some(PromptConfig::from_file_or_default(prompts_path)?);
             if prompts_path.exists() {
-                config.prompts = Some(PromptConfig::from_file(prompts_path)?);
+                config.prompts = Some(
+                    PromptConfig::from_file(&prompts_path)
+                        .or_else(|_| {
+                            log::warn!(
+                                "Could not load {}, trying prompts_en.toml",
+                                prompts_filename
+                            );
+                            PromptConfig::from_file("prompts_en.toml")
+                        })
+                        .or_else(|_| {
+                            log::warn!("Could not load prompts_en.toml, using bundled defaults");
+                            PromptConfig::from_bundled_default()
+                        })?,
+                );
             }
         }
 
@@ -321,16 +344,24 @@ impl AgentConfig {
                 OxydeError::ConfigurationError(format!("Failed to write YAML config: {}", e))
             }),
             Some("toml") => {
-                let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
-                    OxydeError::ConfigurationError(format!("Failed to read TOML config: {}", e))
-                })?;
-                toml::to_string(self).map_err(|e| {
-                    OxydeError::ConfigurationError(format!("Failed to serialize to TOML: {}", e))
-                }).and_then(|content| {
-                    std::fs::write(path.as_ref(), content).map_err(|e| {
-                        OxydeError::ConfigurationError(format!("Failed to write TOML config: {}", e))
+                // let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
+                //     OxydeError::ConfigurationError(format!("Failed to read TOML config: {}", e))
+                // })?;
+                toml::to_string(self)
+                    .map_err(|e| {
+                        OxydeError::ConfigurationError(format!(
+                            "Failed to serialize to TOML: {}",
+                            e
+                        ))
                     })
-                })
+                    .and_then(|content| {
+                        std::fs::write(path.as_ref(), content).map_err(|e| {
+                            OxydeError::ConfigurationError(format!(
+                                "Failed to write TOML config: {}",
+                                e
+                            ))
+                        })
+                    })
             }
             _ => Err(OxydeError::ConfigurationError(
                 "Unknown config file format. Expected .json, .yaml, or .yml".to_string(),
@@ -370,6 +401,7 @@ mod tests {
             behavior: HashMap::new(),
             tts: None,
             prompts: None,
+            language: default_language(),
         };
 
         let json = serde_json::to_string(&config).unwrap();

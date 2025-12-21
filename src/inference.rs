@@ -7,6 +7,7 @@ use std::env;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use dotenvy::dotenv;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::time::timeout;
@@ -48,6 +49,9 @@ pub struct InferenceRequest {
 
     ///memory context
     pub memory_context: String,
+
+    /// Language for the response
+    pub language: String,
 }
 
 /// Response from the inference engine
@@ -175,23 +179,44 @@ impl InferenceProvider for CloudInferenceProvider {
         
         // Add memories as context if available
         if !request.memory_context.is_empty() {
-            // let memories_content = request.memories.iter()
-            //     .map(|m| format!("- {}", m.content))
-            //     .collect::<Vec<_>>()
-            //     .join("\n");
+            let memories_content = request.memories.iter()
+                .map(|m| format!("- {}", m.content))
+                .collect::<Vec<_>>()
+                .join("\n");
             
-            // let context_message = serde_json::json!({
-            //     "role": "system",
-            //     "content": format!("Relevant context:\n{}", memories_content),
-            // });
+            let context_message = serde_json::json!({
+                "role": "system",
+                "content": format!("Relevant context:\n{}", memories_content),
+            });
             
-            // messages.push(context_message);
+            messages.push(context_message);
             let context_message = serde_json::json!({
                 "role": "system",
                 "content": request.memory_context,
             });
             
             messages.push(context_message);
+        }
+
+        if request.language != "en" {
+            let language_instruction = match request.language.as_str() {
+                "es" => "Respond in Spanish.",
+                "ja" => "Respond in Japanese (日本語で回答してください).",
+                "fr" => "Respond in French.",
+                "zh" => "Respond in Chinese (用中文回答).",
+                "de" => "Respond in German.",
+                "ru" => "Respond in Russian (Ответьте на русском языке).",
+                _ => &format!("Respond in language code: {}", request.language),
+            };
+                
+                // INSERT as first system message or append to existing system prompt
+                let mut system_content = request.system_prompt.clone();
+                system_content.push_str("\n\n");
+                system_content.push_str(language_instruction);
+                messages[0] = serde_json::json!({
+                    "role": "system",
+                    "content": system_content,
+            });
         }
         
         // Add user message
@@ -234,6 +259,8 @@ impl InferenceProvider for CloudInferenceProvider {
                 .await
                 .map_err(|e| OxydeError::InferenceError(format!("Failed to parse API response: {}", e)))
         }).await.map_err(|_| OxydeError::InferenceError("API request timed out".to_string()))??;
+
+        println!("API Response: {}", api_response);
         
         // Extract the response text
         let response_text = api_response["choices"][0]["message"]["content"]
@@ -297,8 +324,9 @@ impl InferenceEngine {
         context: &AgentContext,
         system_prompt: &str,
         memory_context: &str,
+        language: Option<&str>,
     ) -> Result<String> {
-        let request = self.prepare_request(input, memories, context, system_prompt, memory_context);
+        let request = self.prepare_request(input, memories, context, system_prompt, memory_context, language);
         
         // Try primary provider first
         let provider_type = *self.provider_type.read().await;
@@ -335,6 +363,7 @@ impl InferenceEngine {
         context: &AgentContext,
         system_prompt: &str,
         memory_context: &str,
+        language: Option<&str>,
     ) -> InferenceRequest {
         // Create system prompt for the agent
         // let system_prompt = format!(
@@ -352,6 +381,7 @@ impl InferenceEngine {
             max_tokens: self.config.max_tokens,
             temperature: self.config.temperature,
             memory_context: memory_context.to_string(),
+            language: language.unwrap_or("en").to_string(),
         }
     }
     
@@ -361,6 +391,8 @@ impl InferenceEngine {
         provider_type: ProviderType,
         request: InferenceRequest,
     ) -> Result<InferenceResponse> {
+        dotenvy::dotenv().ok();
+
         let response = match provider_type {
             ProviderType::Local => {
                 if let Some(model_path) = &self.config.local_model_path {
@@ -444,6 +476,8 @@ mod tests {
         assert_eq!(stats.total_requests, 0);
     }
 
+    // NOTE: This test bypasses PromptConfig intentionally.
+    // It only validates generate_response wiring.
     #[tokio::test]
     async fn test_inference_with_prompts() {
         let config = InferenceConfig::default();
@@ -461,6 +495,7 @@ mod tests {
             &context,
             system_prompt,
             memory_context,
+            Some("en"),
         ).await;
         
         // We expect an error due to missing API key, not a panic ..... fix
