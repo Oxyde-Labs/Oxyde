@@ -1,3 +1,4 @@
+use crate::oxyde_game::emotion::EmotionalState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -5,15 +6,13 @@ use tokio::sync::RwLock;
 
 /// Audio cache management module.
 pub mod audio_cache;
-/// Emotion modeling module.
-pub mod emotion;
 /// TTS providers module.
 pub mod providers;
 /// Voice profiles module.
 pub mod voice_profiles;
 
 pub use audio_cache::*;
-pub use emotion::EmotionalState;
+// pub use emotion::EmotionalState;
 pub use providers::*;
 pub use voice_profiles::*;
 
@@ -188,23 +187,37 @@ impl TTSService {
     fn modulate_voice_for_emotion(
         &self,
         base_profile: &VoiceProfile,
-        emotions: &EmotionalState, // Use the main SDK's EmotionalState
-        _urgency: f32,             // Unused for now
+        e: &EmotionalState,
+        _urgency: f32, // Unused for now
     ) -> VoiceSettings {
         let mut settings = VoiceSettings::from_profile(base_profile);
 
-        // Simple emotional adjustments to the available settings
-        if emotions.happiness > 0.6 {
-            settings.style_exaggeration += 0.1 * emotions.happiness;
-        }
+        let joy = (e.joy + 1.0) * 0.5;
+        let anger = (e.anger + 1.0) * 0.5;
+        let fear = (e.fear + 1.0) * 0.5;
+        let trust = (e.trust + 1.0) * 0.5;
+        let surprise = (e.surprise + 1.0) * 0.5;
+        let sadness = (e.sadness + 1.0) * 0.5;
+        let disgust = (e.disgust + 1.0) * 0.5;
+        let anticipation = (e.anticipation + 1.0) * 0.5;
 
-        if emotions.anger > 0.5 {
-            settings.stability -= 0.1 * emotions.anger;
-        }
+        settings.style_exaggeration += 0.25 * joy;
+        settings.stability += 0.05 * joy;
 
-        if emotions.fear > 0.5 {
-            settings.similarity_boost -= 0.1 * emotions.fear;
-        }
+        settings.stability -= 0.3 * anger;
+        settings.style_exaggeration += 0.1 * anger;
+
+        settings.stability -= 0.2 * fear;
+        settings.similarity_boost -= 0.1 * fear;
+
+        settings.stability += 0.2 * sadness;
+        settings.style_exaggeration -= 0.1 * sadness;
+
+        settings.style_exaggeration += 0.2 * surprise;
+
+        settings.stability -= 0.15 * disgust;
+
+        settings.style_exaggeration += 0.1 * anticipation;
 
         settings
     }
@@ -221,12 +234,9 @@ impl TTSService {
         // Add prosody based on emotions
         let mut prosody_attrs = Vec::new();
 
-        if emotions.happiness > 0.6 {
-            prosody_attrs.push(format!(
-                "rate=\"{:.0}%\"",
-                100.0 + (emotions.happiness * 20.0)
-            ));
-            prosody_attrs.push(format!("pitch=\"+{:.0}Hz\"", emotions.happiness * 30.0));
+        if emotions.joy > 0.6 {
+            prosody_attrs.push(format!("rate=\"{:.0}%\"", 100.0 + (emotions.joy * 20.0)));
+            prosody_attrs.push(format!("pitch=\"+{:.0}Hz\"", emotions.joy * 30.0));
         }
 
         if emotions.anger > 0.5 {
@@ -388,10 +398,10 @@ impl TTSService {
 
         // Round emotions to avoid too many cache misses
         let rounded_emotions = (
-            (emotions.happiness * 10.0).round() as i32,
+            (emotions.joy * 10.0).round() as i32,
             (emotions.anger * 10.0).round() as i32,
             (emotions.fear * 10.0).round() as i32,
-            (emotions.energy * 10.0).round() as i32,
+            // (emotions.energy * 10.0).round() as i32,
         );
         rounded_emotions.hash(&mut hasher);
 

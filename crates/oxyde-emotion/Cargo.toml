@@ -1,0 +1,13 @@
+[package]
+name = "oxyde-emotion"
+version = "0.1.0"
+edition = "2021"
+authors = ["Oxyde Labs"]
+license = "MIT OR Apache-2.0"
+description = "Plutchik-based emotion system for believable game NPCs"
+repository = "https://github.com/Oxyde-Labs/Oxyde"
+keywords = ["gamedev", "npc", "emotion", "ai", "plutchik"]
+categories = ["game-development", "simulation"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }

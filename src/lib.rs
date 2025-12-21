@@ -30,7 +30,7 @@
 //! }
 //! ```
 
-#![forbid(unsafe_code)]
+#![cfg_attr(not(any(feature = "unity", feature = "unreal")), forbid(unsafe_code))]
 #![warn(missing_docs)]
 
 // Re-exports
@@ -50,12 +50,17 @@ pub mod audio;
 pub mod prompt_templates;
 
 // Internal modules
-mod error;
 mod utils;
+mod error;
 
+// Re-export from local error module
 pub use error::OxydeError;
+
 /// Type alias for Results that use OxydeError
 pub type Result<T> = std::result::Result<T, OxydeError>;
+
+/// Agent context (environment state)
+pub type AgentContext = std::collections::HashMap<String, serde_json::Value>;
 
 /// Current version of the Oxyde SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -9,10 +9,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[cfg(feature = "unreal")]
-use ffi_support::{ByteBuffer, FfiStr};
+use ffi_support::FfiStr;
+use std::ffi::CString;
+use std::os::raw::c_char;
 
 use crate::agent::{Agent, AgentContext};
 use crate::oxyde_game::bindings::{EngineBinding, load_agent_config, parse_context_json};
+use crate::oxyde_game::emotion::EmotionalState;
 use crate::{OxydeError, Result};
 
 /// Unreal-specific agent configuration
@@ -97,6 +100,26 @@ impl UnrealBinding {
         
         Ok(agent_context)
     }
+
+    /// Get agent emotion vector
+    ///
+    /// # Arguments
+    ///
+    /// * `agent` - Agent to get emotion vector for
+    ///
+    /// # Returns
+    ///
+    /// Emotion vector [joy, trust, fear, surprise, sadness, disgust, anger, anticipation] or an error
+    pub fn get_agent_emotion_vector(&self, agent: &Agent) -> Result<[f32; 8]> {
+        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+            OxydeError::BindingError(format!("Failed to create Tokio runtime: {}", e))
+        })?;
+        
+        runtime.block_on(async {
+            Ok(agent.emotion_vector().await)
+        })
+    }
+
 }
 
 impl EngineBinding for UnrealBinding {
@@ -208,22 +231,98 @@ pub mod ffi {
     
     /// Process input for an agent
     #[no_mangle]
-    pub extern "C" fn oxyde_unreal_process_input(agent_id: FfiStr, input: FfiStr) -> ByteBuffer {
+    pub extern "C" fn oxyde_unreal_process_input(agent_id: FfiStr, input: FfiStr) -> *mut c_char {
         let binding = get_binding();
         let agent_id_str = agent_id.into_string();
         let input_str = input.into_string();
-        
+
         match binding.get_agent(&agent_id_str) {
             Ok(agent) => {
-                match binding.process_input(&agent, &input_str) {
-                    Ok(response) => ByteBuffer::from_str(&response),
-                    Err(_) => ByteBuffer::from_str("Error processing input"),
+                // keep your current async/blocking logic; just convert the final String to char*
+                let rt = tokio::runtime::Runtime::new().ok();
+                if let Some(rt) = rt {
+                    match rt.block_on(async { agent.process_input(&input_str).await }) {
+                        Ok(response) => CString::new(response).unwrap_or_else(|_| CString::new("Invalid").unwrap()).into_raw(),
+                        Err(_) => CString::new("Error processing input").unwrap().into_raw(),
+                    }
+                } else {
+                    CString::new("Error processing input").unwrap().into_raw()
                 }
-            },
-            Err(_) => ByteBuffer::from_str("Agent not found"),
+            }
+            Err(_) => CString::new("Agent not found").unwrap().into_raw(),
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_get_agent_state(agent_id: FfiStr) -> *mut c_char {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                let state_json = format!("{{\"id\":\"{}\",\"name\":\"{}\"}}", agent.id(), agent.name());
+                CString::new(state_json).unwrap_or_else(|_| CString::new("{}").unwrap()).into_raw()
+            }
+            Err(_) => CString::new("{}").unwrap().into_raw(),
         }
     }
     
+    /// Get agent emotion vector
+    #[no_mangle]
+    pub extern "C" fn oxyde_unreal_get_emotion_vector(
+        agent_id: FfiStr,
+        out_joy: *mut f32,
+        out_trust: *mut f32,
+        out_fear: *mut f32,
+        out_surprise: *mut f32,
+        out_sadness: *mut f32,
+        out_disgust: *mut f32,
+        out_anger: *mut f32,
+        out_anticipation: *mut f32
+    ) -> bool {
+        let binding = get_binding();
+        let agent_id_str = agent_id.into_string();
+        
+        match binding.get_agent(&agent_id_str) {
+            Ok(agent) => {
+                match binding.get_agent_emotion_vector(&agent) {
+                    Ok(emotion_vector) => {
+                        unsafe {
+                            if !out_joy.is_null() {
+                                *out_joy = emotion_vector[0];
+                            }
+                            if !out_trust.is_null() {
+                                *out_trust = emotion_vector[1];
+                            }
+                            if !out_fear.is_null() {
+                                *out_fear = emotion_vector[2];
+                            }
+                            if !out_surprise.is_null() {
+                                *out_surprise = emotion_vector[3];
+                            }
+                            if !out_sadness.is_null() {
+                                *out_sadness = emotion_vector[4];
+                            }
+                            if !out_disgust.is_null() {
+                                *out_disgust = emotion_vector[5];
+                            }
+                            if !out_anger.is_null() {
+                                *out_anger = emotion_vector[6];
+                            }
+                            if !out_anticipation.is_null() {
+                                *out_anticipation = emotion_vector[7];
+                            }
+                        }
+                        true
+                    },
+                    Err(_) => false,
+                }
+            },
+            Err(_) => false,
+        }
+    }
+
+
     /// Free a string allocated by the Oxyde SDK
     #[no_mangle]
     pub extern "C" fn oxyde_unreal_free_string(s: *mut c_char) {

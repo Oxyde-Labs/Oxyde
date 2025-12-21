@@ -486,9 +486,12 @@ impl MemorySystem {
                     .enumerate()
                     .filter(|(_, m)| !m.permanent && m.category == memory.category)
                     .min_by(|(_, a), (_, b)| {
-                        // Consider both importance and access frequency
-                        let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0);
-                        let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0);
+                        // Consider importance, access frequency, and emotional intensity
+                        // High-emotion memories are more resistant to forgetting
+                        let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0)
+                            * (1.0 + a.emotional_intensity);
+                        let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0)
+                            * (1.0 + b.emotional_intensity);
                         a_score.partial_cmp(&b_score).unwrap_or(Ordering::Equal)
                     })
                     .map(|(i, _)| i)
@@ -504,9 +507,12 @@ impl MemorySystem {
                 .enumerate()
                 .filter(|(_, m)| !m.permanent)
                 .min_by(|(_, a), (_, b)| {
-                    // Consider both importance and access frequency
-                    let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0);
-                    let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0);
+                    // Consider importance, access frequency, and emotional intensity
+                    // High-emotion memories are more resistant to forgetting
+                    let a_score = a.importance * (1.0 + a.access_count as f64 / 10.0)
+                        * (1.0 + a.emotional_intensity);
+                    let b_score = b.importance * (1.0 + b.access_count as f64 / 10.0)
+                        * (1.0 + b.emotional_intensity);
                     a_score.partial_cmp(&b_score).unwrap_or(Ordering::Equal)
                 })
                 .map(|(i, _)| i)
@@ -825,6 +831,181 @@ impl MemorySystem {
     /// Total number of memories
     pub async fn count(&self) -> usize {
         self.memories.read().await.len()
+    }
+
+    /// Retrieve memories by emotional valence range
+    ///
+    /// # Arguments
+    ///
+    /// * `min_valence` - Minimum emotional valence (-1.0 to 1.0)
+    /// * `max_valence` - Maximum emotional valence (-1.0 to 1.0)
+    /// * `limit` - Maximum number of memories to return
+    ///
+    /// # Returns
+    ///
+    /// Vector of memories within the valence range, sorted by emotional intensity
+    pub async fn retrieve_by_emotion(&self, min_valence: f64, max_valence: f64, limit: usize) -> Vec<Memory> {
+        let mut memories = self.memories.write().await;
+
+        // Filter memories within valence range
+        let mut matching: Vec<Memory> = memories.iter()
+            .filter(|m| m.emotional_valence >= min_valence && m.emotional_valence <= max_valence)
+            .cloned()
+            .collect();
+
+        // Sort by emotional intensity (descending) for most emotionally charged memories first
+        matching.sort_by(|a, b| {
+            b.emotional_intensity.partial_cmp(&a.emotional_intensity)
+                .unwrap_or(Ordering::Equal)
+        });
+
+        // Update last_accessed for retrieved memories
+        for memory in &matching.iter().take(limit).collect::<Vec<_>>() {
+            if let Some(index) = memories.iter().position(|m| m.id == memory.id) {
+                let mut updated = memories[index].clone();
+                updated.touch();
+                memories[index] = updated;
+            }
+        }
+
+        matching.truncate(limit);
+        matching
+    }
+
+    /// Retrieve memories with high emotional intensity
+    ///
+    /// # Arguments
+    ///
+    /// * `min_intensity` - Minimum emotional intensity (0.0 to 1.0)
+    /// * `limit` - Maximum number of memories to return
+    ///
+    /// # Returns
+    ///
+    /// Vector of high-intensity emotional memories, sorted by intensity
+    pub async fn retrieve_by_intensity(&self, min_intensity: f64, limit: usize) -> Vec<Memory> {
+        let mut memories = self.memories.write().await;
+
+        // Filter memories with intensity above threshold
+        let mut matching: Vec<Memory> = memories.iter()
+            .filter(|m| m.emotional_intensity >= min_intensity)
+            .cloned()
+            .collect();
+
+        // Sort by emotional intensity (descending)
+        matching.sort_by(|a, b| {
+            b.emotional_intensity.partial_cmp(&a.emotional_intensity)
+                .unwrap_or(Ordering::Equal)
+        });
+
+        // Update last_accessed for retrieved memories
+        for memory in &matching.iter().take(limit).collect::<Vec<_>>() {
+            if let Some(index) = memories.iter().position(|m| m.id == memory.id) {
+                let mut updated = memories[index].clone();
+                updated.touch();
+                memories[index] = updated;
+            }
+        }
+
+        matching.truncate(limit);
+        matching
+    }
+
+    /// Retrieve memories with mood-congruent recall
+    ///
+    /// Returns memories that match the current emotional state (valence),
+    /// implementing the psychological phenomenon where people recall
+    /// memories that match their current mood.
+    ///
+    /// # Arguments
+    ///
+    /// * `current_valence` - Current emotional valence (-1.0 to 1.0)
+    /// * `query` - Optional query text for content-based filtering
+    /// * `limit` - Maximum number of memories to return
+    ///
+    /// # Returns
+    ///
+    /// Vector of mood-congruent memories
+    pub async fn retrieve_mood_congruent(&self, current_valence: f64, query: Option<&str>, limit: usize) -> Result<Vec<Memory>> {
+        let mut memories = self.memories.write().await;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::from_secs(0))
+            .as_secs();
+
+        #[derive(Debug, Clone, PartialEq)]
+        struct ScoredMemory {
+            score: f64,
+            memory: Memory,
+        }
+
+        impl PartialOrd for ScoredMemory {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                self.score.partial_cmp(&other.score)
+            }
+        }
+
+        impl Eq for ScoredMemory {}
+
+        impl Ord for ScoredMemory {
+            fn cmp(&self, other: &Self) -> Ordering {
+                self.partial_cmp(other).unwrap_or(Ordering::Equal)
+            }
+        }
+
+        let mut scored_memories: BinaryHeap<ScoredMemory> = BinaryHeap::new();
+
+        for memory in memories.iter() {
+            // Calculate mood congruence - how well the memory's valence matches current mood
+            let valence_diff = (memory.emotional_valence - current_valence).abs();
+            let mood_congruence = (1.0 - valence_diff / 2.0).max(0.0); // 0.0 to 1.0, higher is more congruent
+
+            // Weight by emotional intensity - more intense memories are easier to recall
+            let emotion_weight = 0.3 + (0.7 * memory.emotional_intensity);
+
+            // Apply time decay
+            let age_seconds = now.saturating_sub(memory.created_at);
+            let decay_factor = if memory.permanent {
+                1.0
+            } else {
+                (-self.config.decay_rate * (age_seconds as f64 / 86400.0)).exp()
+            };
+
+            // Calculate relevance score
+            let mut score = mood_congruence * emotion_weight * decay_factor * memory.importance;
+
+            // If query provided, also factor in content relevance
+            if let Some(q) = query {
+                let content_relevance = memory.relevance(q, None);
+                score = (score * 0.6) + (content_relevance * 0.4); // 60% emotion, 40% content
+            }
+
+            if score >= self.config.importance_threshold {
+                scored_memories.push(ScoredMemory {
+                    score,
+                    memory: memory.clone(),
+                });
+            }
+        }
+
+        // Extract top memories
+        let mut result = Vec::with_capacity(limit);
+
+        for _ in 0..limit {
+            if let Some(scored_memory) = scored_memories.pop() {
+                // Update last_accessed for this memory
+                if let Some(index) = memories.iter().position(|m| m.id == scored_memory.memory.id) {
+                    let mut updated = memories[index].clone();
+                    updated.touch();
+                    memories[index] = updated;
+                }
+
+                result.push(scored_memory.memory);
+            } else {
+                break;
+            }
+        }
+
+        Ok(result)
     }
 }
 

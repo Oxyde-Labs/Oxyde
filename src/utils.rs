@@ -4,6 +4,8 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicU64, Ordering};
+use regex::RegexSet;
+use crate::Result;
 
 // Counter to ensure uniqueness even when called rapidly
 #[allow(dead_code)]
@@ -37,6 +39,91 @@ pub fn current_timestamp_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+/// Load moderation patterns from a file
+///
+/// # Arguments
+///
+/// * `patterns_file` - Path to the file containing regex patterns
+///
+/// # Returns
+///
+/// A compiled RegexSet or an error
+pub fn load_moderation_patterns(patterns_file: &str) -> Result<RegexSet> {
+    let content = std::fs::read_to_string(patterns_file)
+        .map_err(|e| crate::OxydeError::ConfigurationError(
+            format!("Failed to read moderation patterns file {}: {}", patterns_file, e)
+        ))?;
+    
+    let patterns: Vec<&str> = content.lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    
+    RegexSet::new(&patterns).map_err(|e| 
+        crate::OxydeError::ConfigurationError(
+            format!("Failed to compile moderation regex patterns: {}", e)
+        )
+    )
+}
+
+/// Check content using cloud moderation API (OpenAI)
+///
+/// # Arguments
+///
+/// * `content` - Text content to check
+/// * `api_key` - API key for the moderation service
+///
+/// # Returns
+///
+/// True if content should be moderated, false otherwise
+///
+/// # Note
+///
+/// This function only flags severe categories (sexual content, hate speech, violence, self-harm)
+/// and ignores mild harassment to be more appropriate for game contexts where players might
+/// express frustration or be rude to NPCs.
+pub async fn check_cloud_moderation(content: &str, api_key: &str) -> Result<bool> {
+    let client = reqwest::Client::new();
+    
+    let request_body = serde_json::json!({
+        "input": content
+    });
+    
+    let response = client
+        .post("https://api.openai.com/v1/moderations")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| crate::OxydeError::InferenceError(
+            format!("Cloud moderation request failed: {}", e)
+        ))?;
+    
+    let moderation_response: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| crate::OxydeError::InferenceError(
+            format!("Failed to parse moderation response: {}", e)
+        ))?;
+    
+    // Only flag severe categories - ignore mild harassment
+    // This is more appropriate for games where players might be rude to NPCs
+    let categories = &moderation_response["results"][0]["categories"];
+    
+    let should_moderate = 
+        categories["sexual"].as_bool().unwrap_or(false) ||
+        categories["sexual/minors"].as_bool().unwrap_or(false) ||
+        categories["hate"].as_bool().unwrap_or(false) ||
+        categories["hate/threatening"].as_bool().unwrap_or(false) ||
+        categories["self-harm"].as_bool().unwrap_or(false) ||
+        categories["self-harm/intent"].as_bool().unwrap_or(false) ||
+        categories["self-harm/instructions"].as_bool().unwrap_or(false) ||
+        categories["violence/graphic"].as_bool().unwrap_or(false);
+    
+    Ok(should_moderate)
 }
 
 /// Calculate the relevance score for a memory based on its content and a query

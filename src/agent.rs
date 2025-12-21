@@ -6,16 +6,21 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use regex::RegexSet;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::audio::{AudioData, EmotionalState, TTSError, TTSService};
+use crate::audio::{AudioData, TTSError, TTSService};
 use crate::config::AgentConfig;
 use crate::inference::InferenceEngine;
 use crate::memory::{Memory, MemoryCategory, MemorySystem};
 use crate::oxyde_game::behavior::{Behavior, BehaviorResult};
+use crate::oxyde_game::emotion::EmotionalState;
 use crate::oxyde_game::intent::Intent;
 use crate::{PromptConfig, Result};
+
+// Re-export AgentContext from oxyde-core so it's available as agent::AgentContext
+pub use crate::AgentContext;
 
 /// Callback for agent events
 pub type AgentCallback = Box<dyn Fn(&Agent, &str) + Send + Sync>;
@@ -112,9 +117,6 @@ impl std::fmt::Display for AgentEvent {
     }
 }
 
-/// Context data for an agent
-pub type AgentContext = HashMap<String, serde_json::Value>;
-
 /// Agent represents an AI-powered NPC in a game
 pub struct Agent {
     /// Unique identifier for the agent
@@ -149,6 +151,12 @@ pub struct Agent {
 
     /// Callbacks for agent events
     callbacks: Mutex<HashMap<String, Vec<CallbackWrapper>>>,
+
+    /// Emotional state of the agent
+    emotional_state: RwLock<EmotionalState>,
+
+    /// Moderation patterns for content filtering
+    moderation_patterns: Option<RegexSet>,
 }
 
 impl Agent {
@@ -168,6 +176,13 @@ impl Agent {
             PromptConfig::from_bundled_default().expect("Failed to load bundled prompt defaults")
         }));
 
+        // Load moderation patterns if enabled
+        let moderation_patterns = if config.moderation.enabled {
+            crate::utils::load_moderation_patterns("assets/badwords_regex.txt").ok()
+        } else {
+            None
+        };
+
         Self {
             id: Uuid::new_v4(),
             name: config.agent.name.clone(),
@@ -179,6 +194,8 @@ impl Agent {
             context: RwLock::new(HashMap::new()),
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
+            emotional_state: RwLock::new(EmotionalState::new()),
+            moderation_patterns,
             prompts,
         }
     }
@@ -187,6 +204,12 @@ impl Agent {
     pub fn new_with_tts(config: AgentConfig) -> Self {
         let inference = Arc::new(InferenceEngine::new(&config.inference));
         let memory = Arc::new(MemorySystem::new(config.memory.clone()));
+
+        let moderation_patterns = if config.moderation.enabled {
+            crate::utils::load_moderation_patterns("assets/badwords_regex.txt").ok()
+        } else {
+            None
+        };
 
         // Initialize TTS if configured
         let tts_service = config.tts.as_ref().map(|tts_config| {
@@ -209,6 +232,8 @@ impl Agent {
             context: RwLock::new(HashMap::new()),
             behaviors: RwLock::new(Vec::new()),
             callbacks: Mutex::new(HashMap::new()),
+            emotional_state: RwLock::new(EmotionalState::new()),
+            moderation_patterns,
             prompts,
         }
     }
@@ -246,6 +271,51 @@ impl Agent {
     /// Get the agent's current state
     pub async fn state(&self) -> AgentState {
         *self.state.read().await
+    }
+
+    /// Get a copy of the agent's current emotional state
+    pub async fn emotional_state(&self) -> EmotionalState {
+        self.emotional_state.read().await.clone()
+    }
+
+    /// Get the agent's emotion vector as a float array
+    pub async fn emotion_vector(&self) -> [f32; 8] {
+        let emotion_state = self.emotional_state.read().await;
+        emotion_state.as_vector()
+    }
+
+    /// Update a specific emotion by a delta value
+    ///
+    /// # Arguments
+    ///
+    /// * `emotion` - Name of the emotion to update (e.g., "joy", "fear")
+    /// * `delta` - Amount to change the emotion by (-1.0 to 1.0)
+    pub async fn update_emotion(&self, emotion: &str, delta: f32) {
+        let mut state = self.emotional_state.write().await;
+        state.update_emotion(emotion, delta);
+    }
+
+    /// Apply emotional decay to all emotions
+    ///
+    /// This should be called periodically (e.g., every frame or tick)
+    /// to allow emotions to naturally fade over time
+    pub async fn decay_emotions(&self) {
+        let mut state = self.emotional_state.write().await;
+        state.decay();
+    }
+
+    /// Get the current emotional valence (-1.0 to 1.0)
+    ///
+    /// Valence represents how positive or negative the agent feels
+    pub async fn emotional_valence(&self) -> f32 {
+        self.emotional_state.read().await.valence()
+    }
+
+    /// Get the current emotional arousal (0.0 to 1.0)
+    ///
+    /// Arousal represents how intensely the agent is feeling
+    pub async fn emotional_arousal(&self) -> f32 {
+        self.emotional_state.read().await.arousal()
     }
 
     /// Add a behavior to the agent
@@ -323,6 +393,58 @@ impl Agent {
         Ok(())
     }
 
+    /// Check if content should be moderated
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Content to check for inappropriate material
+    ///
+    /// # Returns
+    ///
+    /// `Some(response_message)` if content should be moderated, `None` if content is acceptable
+    async fn check_moderation(&self, input: &str) -> Option<String> {
+        if !self.config.moderation.enabled {
+            return None;
+        }
+
+        // Quick regex check first (instant)
+        let regex_flagged = if let Some(ref patterns) = self.moderation_patterns {
+            patterns.is_match(&input.to_lowercase())
+        } else {
+            false
+        };
+        
+        // If regex already flagged it, no need for cloud check - return immediately
+        if regex_flagged {
+            log::warn!("Agent {} moderated inappropriate content (regex): {}", self.name, input);
+            return Some(self.config.moderation.response_message.clone());
+        }
+        
+        // Only do cloud check if regex didn't catch it and cloud moderation is enabled
+        if self.config.moderation.use_cloud_moderation {
+            let api_key = self.config.moderation.cloud_moderation_api_key.clone()
+                .or_else(|| self.config.inference.api_key.clone())
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            
+            if let Some(key) = api_key {
+                match crate::utils::check_cloud_moderation(input, &key).await {
+                    Ok(true) => {
+                        log::warn!("Agent {} moderated inappropriate content (cloud): {}", self.name, input);
+                        return Some(self.config.moderation.response_message.clone());
+                    },
+                    Ok(false) => {
+                        // Content is clean, continue processing
+                    },
+                    Err(e) => {
+                        log::warn!("Cloud moderation failed, continuing without it: {}", e);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Process player input and generate a response
     ///
     /// # Arguments
@@ -340,13 +462,29 @@ impl Agent {
 
         log::debug!("Agent {} processing input: {}", self.name, input);
 
+        // Check for inappropriate content if moderation is enabled
+        if let Some(moderation_response) = self.check_moderation(input).await {
+            {
+                let mut state = self.state.write().await;
+                *state = AgentState::Idle;
+            }
+            self.trigger_callback("response", &moderation_response).await;
+            return Ok(moderation_response);
+        }
+
         // Analyze player intent
         let intent = Intent::analyze(input).await?;
 
-        // Update memory with player input
-        self.memory
-            .add(Memory::new(MemoryCategory::Episodic, input, 1.0, None))
-            .await?;
+        // Update memory with player input, capturing current emotional state
+        let emotional_state = self.emotional_state.read().await;
+        self.memory.add(Memory::new_emotional(
+                MemoryCategory::Episodic,
+                input,
+                1.0,
+                emotional_state.valence() as f64,
+                emotional_state.arousal() as f64,
+                None
+            )).await?;
 
         // Find behaviors that match the intent
         let behaviors = self.behaviors.read().await;
@@ -357,11 +495,43 @@ impl Agent {
             *state = AgentState::Executing;
         }
 
-        // Execute matching behaviors
-        for behavior in behaviors.iter() {
+        // Get current emotional state for behavior filtering and prioritization
+        let current_emotional_state = self.emotional_state.read().await.clone();
+
+        // Filter and sort behaviors by priority (considering emotional modifiers)
+        let mut candidate_behaviors: Vec<_> = behaviors
+            .iter()
+            .filter(|b| {
+                // Check if behavior's emotion trigger is satisfied
+                if let Some(trigger) = b.emotion_trigger() {
+                    trigger.matches(&current_emotional_state)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        // Sort by priority (base + emotional modifier), highest first
+        candidate_behaviors.sort_by(|a, b| {
+            let a_priority = a.priority() as i32 + a.emotional_priority_modifier(&current_emotional_state);
+            let b_priority = b.priority() as i32 + b.emotional_priority_modifier(&current_emotional_state);
+            b_priority.cmp(&a_priority) // Descending order
+        });
+
+        // Execute matching behaviors in priority order
+        for behavior in candidate_behaviors {
             if behavior.matches_intent(&intent).await {
                 let context = self.context.read().await.clone();
                 let behavior_result = behavior.execute(&intent, &context).await?;
+
+                // Apply emotional influences from the behavior
+                let influences = behavior.emotion_influences();
+                if !influences.is_empty() {
+                    let mut emotional_state = self.emotional_state.write().await;
+                    for influence in influences {
+                        emotional_state.update_emotion(&influence.emotion, influence.delta);
+                    }
+                }
 
                 match behavior_result {
                     BehaviorResult::Response(text) => {
@@ -412,16 +582,23 @@ impl Agent {
                 .generate_response(input, &memories, &context, &system_prompt, &memory_context)
                 .await?;
 
-            // Store the response in memory
-            self.memory
-                .add(Memory::new(MemoryCategory::Semantic, &response, 1.0, None))
-                .await?;
+            // Store the response in memory with current emotional state
+            let emotional_state = self.emotional_state.read().await;
+            self.memory.add(Memory::new_emotional(
+                MemoryCategory::Semantic,
+                &response,
+                1.0,
+                emotional_state.valence() as f64,
+                emotional_state.arousal() as f64,
+                None
+            )).await?;
         }
 
         {
             let mut state = self.state.write().await;
             *state = AgentState::Idle;
         }
+
 
         // Trigger response callback
         self.trigger_event(AgentEvent::Response, &response).await;
@@ -499,6 +676,7 @@ impl Agent {
         }
     }
 
+
     /// Create a new agent with the same configuration but new state
     ///
     /// This is a simplified clone method that creates a new agent with the same
@@ -564,6 +742,9 @@ impl AgentBuilder {
             crate::OxydeError::ConfigurationError("Agent configuration is required".to_string())
         })?;
 
+        // Validate the configuration before building
+        config.validate()?;
+
         let agent = Agent::new(config);
 
         // Add all behaviors provided via the builder
@@ -593,6 +774,7 @@ mod tests {
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
             tts: None, // No TTS for this test
+            moderation: crate::config::ModerationConfig::default(),
             prompts: Some(PromptConfig::from_bundled_default().unwrap()),
         };
 
@@ -606,7 +788,9 @@ mod tests {
         assert_eq!(agent.state().await, AgentState::Stopped);
     }
 
+
     #[tokio::test]
+    
     async fn test_agent_builder_with_behaviors() {
         use crate::oxyde_game::behavior::GreetingBehavior;
 
@@ -620,6 +804,7 @@ mod tests {
             memory: MemoryConfig::default(),
             inference: InferenceConfig::default(),
             behavior: HashMap::new(),
+            moderation: crate::config::ModerationConfig::default(),
             tts: None, // No TTS for this test,
             prompts: None,
         };
@@ -665,5 +850,35 @@ mod tests {
         } else {
             panic!("Expected ConfigurationError");
         }
+    }
+
+    #[tokio::test]
+    async fn test_content_moderation() {
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Test Agent".to_string(),
+                role: "Tester".to_string(),
+                backstory: vec!["A test agent".to_string()],
+                knowledge: vec!["Testing knowledge".to_string()],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+            moderation: crate::config::ModerationConfig {
+                enabled: true,
+                response_message: "Sorry, I can't respond to that.".to_string(),
+                use_cloud_moderation: false,
+                cloud_moderation_api_key: None,
+            },
+            tts: None, // No TTS for this test
+            prompts: None,
+        };
+
+        let agent = Agent::new(config);
+        agent.start().await.unwrap();
+
+        // Test that bad words trigger moderation response
+        let response = agent.process_input("Fuck you").await.unwrap();
+        assert_eq!(response, "Sorry, I can't respond to that.");
     }
 }
