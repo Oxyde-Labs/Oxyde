@@ -6,11 +6,7 @@
 # oxyde-behavior = { path = "crates/oxyde-behavior", version = "0.1.0" }
 
 async-trait = "0.1.68"
-<<<<<<< HEAD
-dotenvy = "0.15.7"
-=======
 dotenvy = "0.15"
->>>>>>> main
 env_logger = "0.10.0"
 ffi-support = { version = "0.4.4", optional = true }
 futures = "0.3.28"
