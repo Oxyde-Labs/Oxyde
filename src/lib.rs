@@ -38,14 +38,16 @@ pub use agent::Agent;
 pub use config::AgentConfig;
 pub use inference::InferenceEngine;
 pub use memory::MemorySystem;
+pub use prompt_templates::PromptConfig;
 
 // Modules
-pub mod audio;
 pub mod agent;
 pub mod config;
 pub mod inference;
 pub mod memory;
 pub mod oxyde_game;
+pub mod audio;
+pub mod prompt_templates;
 
 // Internal modules
 mod utils;
