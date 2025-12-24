@@ -135,7 +135,8 @@ impl Intent {
 
         let prompt = format!(
             "Classify the intent of this message{}: \"{}\"\n\n\
-            Respond with ONLY ONE of these words: greeting, question, command, chat\n\
+            Respond with ONLY ONE of these exact English words, nothing else: greeting, question, command, chat\n\
+            For Non English inputs, first translate to English, then classify as one of those four.\n\n\
             - greeting: if saying hello, hi, greetings, or similar\n\
             - question: if asking something (contains ?, what, who, where, when, why, how)\n\
             - command: if giving an order or request (follow me, attack, go, stop)\n\
@@ -172,13 +173,13 @@ impl Intent {
         
         let intent_type = if input.ends_with('?') {
             IntentType::Question
-        } else if input.split_whitespace().count() <= 2 {
-            IntentType::Greeting
         } else if ["follow", "go", "stop", "attack", "come"]
             .iter()
             .any(|cmd| input.to_lowercase().starts_with(cmd))
         {
             IntentType::Command
+        } else if input.split_whitespace().count() <= 2 {
+            IntentType::Greeting
         } else {
             IntentType::Chat
         };
@@ -287,6 +288,7 @@ impl Intent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::InferenceConfig;
 
     #[tokio::test]
     async fn test_intent_from_chat() -> Result<()> {
@@ -301,6 +303,76 @@ mod tests {
 
         let chat = Intent::analyze("I like this village.", None, "en").await?;
         assert_eq!(chat.intent_type, IntentType::Chat);
+        Ok(())
+    }
+    
+    #[tokio::test]
+    async fn test_llm_based_intent_detection() -> Result<()> {
+        // Initialize the inference engine with cloud API configuration
+        let config = InferenceConfig {
+            use_local: false,
+            api_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
+            api_key: None, // Will use OXYDE_API_KEY or OPENAI_API_KEY from env
+            local_model_path: None,
+            max_tokens: 100,
+            temperature: 0.5,
+            fallback_api: None,
+            model: "gpt-3.5-turbo".to_string(),
+            timeout_ms: 10000,
+        };
+        
+        let engine = crate::inference::InferenceEngine::new(&config);
+        
+        // Test various intents with LLM-based analysis
+        let greeting = Intent::analyze("Hello there, friend!", Some(&engine), "en").await?;
+        assert_eq!(greeting.intent_type, IntentType::Greeting);
+        assert!(greeting.confidence > 0.8);
+        
+        let question = Intent::analyze("What is your name and where are you from?", Some(&engine), "en").await?;
+        assert_eq!(question.intent_type, IntentType::Question);
+        assert!(question.confidence > 0.8);
+        
+        let command = Intent::analyze("Follow me to the treasure!", Some(&engine), "en").await?;
+        assert_eq!(command.intent_type, IntentType::Command);
+        assert!(command.confidence > 0.8);
+        
+        let chat = Intent::analyze("I think this village is beautiful", Some(&engine), "en").await?;
+        assert_eq!(chat.intent_type, IntentType::Chat);
+        assert!(chat.confidence > 0.8);
+        
+        Ok(())
+    }
+
+      #[tokio::test]
+    async fn test_llm_based_intent_multilingual() -> Result<()> {
+        // Test LLM-based intent detection with different languages
+        let config = InferenceConfig {
+            use_local: false,
+            api_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
+            api_key: None,
+            local_model_path: None,
+            max_tokens: 1000,
+            temperature: 0.5,
+            fallback_api: None,
+            model: "gpt-3.5-turbo".to_string(),
+            timeout_ms: 10000,
+        };
+        
+        let engine = crate::inference::InferenceEngine::new(&config);
+        
+        // Spanish greeting
+        let spanish_greeting = Intent::analyze("¡Hola amigo!", Some(&engine), "es").await?;
+        assert_eq!(spanish_greeting.intent_type, IntentType::Greeting);
+        
+        // Japanese question
+        // let japanese_question = Intent::analyze("あなたの名前は何ですか？", Some(&engine), "ja").await?;
+        // println!("Japanese  Question: {:?}",japanese_question );
+        // assert_eq!(japanese_question.intent_type, IntentType::Question);
+        
+        // French command
+        let french_command = Intent::analyze("Suis-moi!", Some(&engine), "fr").await?;
+        assert_eq!(french_command.intent_type, IntentType::Command);
+        
         Ok(())
     }
 

@@ -31,19 +31,19 @@ pub enum ProviderType {
 pub struct InferenceRequest {
     /// Input text
     pub input: String,
-    
+
     /// System prompt
     pub system_prompt: String,
-    
+
     /// Relevant memories
     pub memories: Vec<Memory>,
-    
+
     /// Context data
     pub context: AgentContext,
-    
+
     /// Maximum tokens to generate
     pub max_tokens: usize,
-    
+
     /// Temperature
     pub temperature: f32,
 
@@ -59,13 +59,13 @@ pub struct InferenceRequest {
 pub struct InferenceResponse {
     /// Generated text
     pub text: String,
-    
+
     /// Time taken for inference in milliseconds
     pub time_ms: u64,
-    
+
     /// Provider name or identifier
     pub provider_name: String,
-    
+
     /// Tokens generated
     pub tokens: usize,
 }
@@ -75,10 +75,10 @@ pub struct InferenceResponse {
 pub struct InferenceEngine {
     /// Configuration for the inference engine
     config: InferenceConfig,
-    
+
     /// Current inference provider type
     provider_type: RwLock<ProviderType>,
-    
+
     /// Statistics about inference
     stats: RwLock<InferenceStats>,
 }
@@ -88,16 +88,16 @@ pub struct InferenceEngine {
 pub struct InferenceStats {
     /// Total number of requests
     pub total_requests: usize,
-    
+
     /// Number of successful requests
     pub successful_requests: usize,
-    
+
     /// Number of failed requests
     pub failed_requests: usize,
-    
+
     /// Average latency in milliseconds
     pub avg_latency_ms: f64,
-    
+
     /// Average tokens generated
     pub avg_tokens: f64,
 }
@@ -119,34 +119,34 @@ impl InferenceProvider for LocalInferenceProvider {
     async fn generate(&self, request: InferenceRequest) -> Result<InferenceResponse> {
         // Simulate local model inference for now
         // In a real implementation, this would use llm crate to load and run the model
-        
+
         log::info!("Generating response with local model: {}", self.model_path);
-        
+
         let start_time = Instant::now();
-        
+
         // Prepare the prompt
         let mut prompt = String::new();
-        
+
         // Add system prompt
         prompt.push_str(&request.system_prompt);
         prompt.push_str("\n\n");
-        
+
         // Add memories as context
         if !request.memory_context.is_empty() {
             prompt.push_str(&request.memory_context);
             prompt.push_str("\n\n");
         }
-        
+
         // Add user input
         prompt.push_str(&format!("User: {}\n", request.input));
         prompt.push_str("Assistant: ");
-        
+
         // TODO: Replace with actual local model inference
         let response = format!("This is a simulated response to: {}", request.input);
         let token_count = response.split_whitespace().count();
-        
+
         let elapsed = start_time.elapsed();
-        
+
         Ok(InferenceResponse {
             text: response,
             time_ms: elapsed.as_millis() as u64,
@@ -166,35 +166,37 @@ pub struct CloudInferenceProvider {
 impl InferenceProvider for CloudInferenceProvider {
     async fn generate(&self, request: InferenceRequest) -> Result<InferenceResponse> {
         log::info!("Generating response with cloud API: {}", self.api_endpoint);
-        
+
         let start_time = Instant::now();
-        
+
         // Prepare the messages for the API
         let system_message = serde_json::json!({
             "role": "system",
             "content": request.system_prompt,
         });
-        
+
         let mut messages = vec![system_message];
-        
+
         // Add memories as context if available
         if !request.memory_context.is_empty() {
-            let memories_content = request.memories.iter()
+            let memories_content = request
+                .memories
+                .iter()
                 .map(|m| format!("- {}", m.content))
                 .collect::<Vec<_>>()
                 .join("\n");
-            
+
             let context_message = serde_json::json!({
                 "role": "system",
                 "content": format!("Relevant context:\n{}", memories_content),
             });
-            
+
             messages.push(context_message);
             let context_message = serde_json::json!({
                 "role": "system",
                 "content": request.memory_context,
             });
-            
+
             messages.push(context_message);
         }
 
@@ -208,25 +210,25 @@ impl InferenceProvider for CloudInferenceProvider {
                 "ru" => "Respond in Russian (Ответьте на русском языке).",
                 _ => &format!("Respond in language code: {}", request.language),
             };
-                
-                // INSERT as first system message or append to existing system prompt
-                let mut system_content = request.system_prompt.clone();
-                system_content.push_str("\n\n");
-                system_content.push_str(language_instruction);
-                messages[0] = serde_json::json!({
+
+            // INSERT as first system message or append to existing system prompt
+            let mut system_content = request.system_prompt.clone();
+            system_content.push_str("\n\n");
+            system_content.push_str(language_instruction);
+            messages[0] = serde_json::json!({
                     "role": "system",
                     "content": system_content,
             });
         }
-        
+
         // Add user message
         let user_message = serde_json::json!({
             "role": "user",
             "content": request.input,
         });
-        
+
         messages.push(user_message);
-        
+
         // Prepare the API request
         let client = reqwest::Client::new();
         let model_name = if self.api_endpoint.contains("openai") {
@@ -240,15 +242,20 @@ impl InferenceProvider for CloudInferenceProvider {
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
         });
-        
+
         // Set timeout for the request
-        let duration = Duration::from_millis(request.context.get("timeout_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5000));
-        
+        let duration = Duration::from_millis(
+            request
+                .context
+                .get("timeout_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(5000),
+        );
+
         // Send the request to the API
         let api_response = timeout(duration, async {
-            client.post(&self.api_endpoint)
+            client
+                .post(&self.api_endpoint)
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .json(&api_request)
@@ -257,20 +264,24 @@ impl InferenceProvider for CloudInferenceProvider {
                 .map_err(|e| OxydeError::InferenceError(format!("API request failed: {}", e)))?
                 .json::<serde_json::Value>()
                 .await
-                .map_err(|e| OxydeError::InferenceError(format!("Failed to parse API response: {}", e)))
-        }).await.map_err(|_| OxydeError::InferenceError("API request timed out".to_string()))??;
-        
+                .map_err(|e| {
+                    OxydeError::InferenceError(format!("Failed to parse API response: {}", e))
+                })
+        })
+        .await
+        .map_err(|_| OxydeError::InferenceError("API request timed out".to_string()))??;
+
         // Extract the response text
         let response_text = api_response["choices"][0]["message"]["content"]
             .as_str()
             .ok_or_else(|| OxydeError::InferenceError("Invalid API response format".to_string()))?
             .to_string();
-            
+
         // Count tokens before moving the string
         let token_count = response_text.split_whitespace().count();
-        
+
         let elapsed = start_time.elapsed();
-        
+
         Ok(InferenceResponse {
             text: response_text,
             time_ms: elapsed.as_millis() as u64,
@@ -296,14 +307,14 @@ impl InferenceEngine {
         } else {
             ProviderType::Cloud
         };
-        
+
         Self {
             config: config.clone(),
             provider_type: RwLock::new(provider_type),
             stats: RwLock::new(InferenceStats::default()),
         }
     }
-    
+
     /// Generate a response for the given input
     ///
     /// # Arguments
@@ -324,35 +335,46 @@ impl InferenceEngine {
         memory_context: &str,
         language: Option<&str>,
     ) -> Result<String> {
-        let request = self.prepare_request(input, memories, context, system_prompt, memory_context, language);
-        
+        let request = self.prepare_request(
+            input,
+            memories,
+            context,
+            system_prompt,
+            memory_context,
+            language,
+        );
+
         // Try primary provider first
         let provider_type = *self.provider_type.read().await;
-        let response = self.generate_with_provider(provider_type, request.clone()).await;
-        
+        let response = self
+            .generate_with_provider(provider_type, request.clone())
+            .await;
+
         // If primary fails and fallback is available, try fallback
         if response.is_err() && self.config.fallback_api.is_some() {
             log::warn!("Primary inference provider failed, trying fallback");
-            
+
             let fallback_provider = match provider_type {
                 ProviderType::Local => ProviderType::Cloud,
                 ProviderType::Cloud => ProviderType::Local,
             };
-            
+
             // Update stats for the failed request
             {
                 let mut stats = self.stats.write().await;
                 stats.total_requests += 1;
                 stats.failed_requests += 1;
             }
-            
-            return self.generate_with_provider(fallback_provider, request).await
+
+            return self
+                .generate_with_provider(fallback_provider, request)
+                .await
                 .map(|response| response.text);
         }
-        
+
         response.map(|response| response.text)
     }
-    
+
     /// Prepare an inference request
     fn prepare_request(
         &self,
@@ -370,7 +392,7 @@ impl InferenceEngine {
         //     context.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown"),
         //     context.get("role").and_then(|v| v.as_str()).unwrap_or("character"),
         // );
-        
+
         InferenceRequest {
             input: input.to_string(),
             system_prompt: system_prompt.to_string(),
@@ -382,7 +404,7 @@ impl InferenceEngine {
             language: language.unwrap_or("en").to_string(),
         }
     }
-    
+
     /// Generate a response with the specified provider type
     async fn generate_with_provider(
         &self,
@@ -400,47 +422,46 @@ impl InferenceEngine {
                     local_provider.generate(request).await
                 } else {
                     return Err(OxydeError::InferenceError(
-                        "No local model path configured".to_string()
+                        "No local model path configured".to_string(),
                     ));
                 }
-            },
+            }
             ProviderType::Cloud => {
-                let api_endpoint = self.config.api_endpoint.clone()
-                    .ok_or_else(|| OxydeError::InferenceError(
-                        "No API endpoint configured".to_string()
-                    ))?;
-                
+                let api_endpoint = self.config.api_endpoint.clone().ok_or_else(|| {
+                    OxydeError::InferenceError("No API endpoint configured".to_string())
+                })?;
+
                 let api_key = self.config.api_key.clone()
                     .or_else(|| env::var("OXYDE_API_KEY").ok())
                     .ok_or_else(|| OxydeError::InferenceError(
                         "No API key configured. Set OXYDE_API_KEY environment variable or configure in InferenceConfig".to_string()
                     ))?;
 
-                
                 let cloud_provider = CloudInferenceProvider {
                     api_endpoint,
                     api_key,
                 };
-                
+
                 cloud_provider.generate(request).await
             }
         };
-        
+
         // Update stats on success
         if let Ok(ref resp) = response {
             let mut stats = self.stats.write().await;
             stats.total_requests += 1;
             stats.successful_requests += 1;
-            
+
             // Update moving average for latency and tokens
             let count = stats.successful_requests as f64;
-            stats.avg_latency_ms = (stats.avg_latency_ms * (count - 1.0) + resp.time_ms as f64) / count;
+            stats.avg_latency_ms =
+                (stats.avg_latency_ms * (count - 1.0) + resp.time_ms as f64) / count;
             stats.avg_tokens = (stats.avg_tokens * (count - 1.0) + resp.tokens as f64) / count;
         }
-        
+
         response
     }
-    
+
     /// Switch to a different inference provider type
     ///
     /// # Arguments
@@ -449,10 +470,10 @@ impl InferenceEngine {
     pub async fn switch_provider(&self, provider_type: ProviderType) {
         let mut current = self.provider_type.write().await;
         *current = provider_type;
-        
+
         log::info!("Switched to {:?} inference provider", provider_type);
     }
-    
+
     /// Get current inference statistics
     pub async fn get_stats(&self) -> InferenceStats {
         self.stats.read().await.clone()
@@ -462,15 +483,15 @@ impl InferenceEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_inference_engine_creation() {
         let config = InferenceConfig::default();
         let engine = InferenceEngine::new(&config);
-        
+
         let provider_type = *engine.provider_type.read().await;
         assert_eq!(provider_type, ProviderType::Cloud);
-        
+
         let stats = engine.get_stats().await;
         assert_eq!(stats.total_requests, 0);
     }
@@ -479,25 +500,32 @@ mod tests {
     // It only validates generate_response wiring.
     #[tokio::test]
     async fn test_inference_with_prompts() {
+        if env::var("OPENAI_API_KEY").is_err() && env::var("OXYDE_API_KEY").is_err() {
+            eprintln!(
+                "Skipping test_inference_with_prompts: OPENAI_API_KEY or OXYDE_API_KEY not set"
+            );
+            return;
+        }
         let config = InferenceConfig::default();
         let engine = InferenceEngine::new(&config);
-        
+
         let memories = vec![];
         let context = AgentContext::new();
         let system_prompt = "You are a test NPC.";
         let memory_context = "Previous interactions: none";
-        
+
         // This will fail without API key, but tests the signature
-        let result = engine.generate_response(
-            "Hello",
-            &memories,
-            &context,
-            system_prompt,
-            memory_context,
-            Some("en"),
-        ).await;
-        
-        // We expect an error due to missing API key, not a panic ..... fix
-        assert!(result.is_err());
+        let result = engine
+            .generate_response(
+                "Hello",
+                &memories,
+                &context,
+                system_prompt,
+                memory_context,
+                Some("en"),
+            )
+            .await;
+
+        assert!(result.is_ok());
     }
 }
