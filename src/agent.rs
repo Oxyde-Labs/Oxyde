@@ -221,11 +221,17 @@ impl Agent {
         urgency: f32,
     ) -> Result<AudioData> {
         if let Some(tts) = &self.tts_service {
-            tts.synthesize_npc_speech(&self.name, text, emotions, urgency, Some(&self.config.language))
-                .await
-                .map_err(|e| {
-                    crate::OxydeError::AudioError(TTSError::AudioProcessingError(e.to_string()))
-                })
+            tts.synthesize_npc_speech(
+                &self.name,
+                text,
+                emotions,
+                urgency,
+                Some(&self.config.language),
+            )
+            .await
+            .map_err(|e| {
+                crate::OxydeError::AudioError(TTSError::AudioProcessingError(e.to_string()))
+            })
         } else {
             Err(crate::OxydeError::ConfigurationError(
                 "TTS not configured".to_string(),
@@ -295,14 +301,17 @@ impl Agent {
                 &serde_json::to_string(&self.config.agent.backstory)?,
                 f64::INFINITY,
                 None,
-                Some(&self.config.language)
+                Some(&self.config.language),
             ))
             .await?;
 
         let context = {
             let mut ctx = HashMap::new();
             ctx.insert("name".to_string(), serde_json::json!(self.name.clone()));
-            ctx.insert("role".to_string(), serde_json::json!(self.config.agent.role.clone()));
+            ctx.insert(
+                "role".to_string(),
+                serde_json::json!(self.config.agent.role.clone()),
+            );
             ctx
         };
 
@@ -348,7 +357,13 @@ impl Agent {
 
         // Update memory with player input
         self.memory
-            .add(Memory::new(MemoryCategory::Episodic, input, 1.0, None, Some(&self.config.language)))
+            .add(Memory::new(
+                MemoryCategory::Episodic,
+                input,
+                1.0,
+                None,
+                Some(&self.config.language),
+            ))
             .await?;
 
         // Find behaviors that match the intent
@@ -391,7 +406,7 @@ impl Agent {
 
             // Get relevant memories
             let memories = self.memory.retrieve_relevant(input, 5, None, None).await?;
-            
+
             let system_prompt = self.prompts.generate_system_prompt(
                 &self.name,
                 &self.config.agent.role,
@@ -400,11 +415,13 @@ impl Agent {
 
             let memory_data: Vec<(String, String, f64)> = memories
                 .iter()
-                .map(|m| (
-                    m.content.clone(),
-                    m.category.as_str().to_string(),
-                    m.importance,
-                ))
+                .map(|m| {
+                    (
+                        m.content.clone(),
+                        m.category.as_str().to_string(),
+                        m.importance,
+                    )
+                })
                 .collect();
             let memory_context = self.prompts.format_memory_context(&memory_data);
 
@@ -412,12 +429,25 @@ impl Agent {
             let context = self.context.read().await.clone();
             response = self
                 .inference
-                .generate_response(input, &memories, &context, &system_prompt, &memory_context, Some(language))
+                .generate_response(
+                    input,
+                    &memories,
+                    &context,
+                    &system_prompt,
+                    &memory_context,
+                    Some(language),
+                )
                 .await?;
 
             // Store the response in memory
             self.memory
-                .add(Memory::new(MemoryCategory::Semantic, &response, 1.0, None, Some(&self.config.language)))
+                .add(Memory::new(
+                    MemoryCategory::Semantic,
+                    &response,
+                    1.0,
+                    None,
+                    Some(&self.config.language),
+                ))
                 .await?;
         }
 
@@ -626,7 +656,7 @@ mod tests {
             behavior: HashMap::new(),
             tts: None, // No TTS for this test,
             prompts: None,
-            language: "en".to_string()
+            language: "en".to_string(),
         };
 
         // Create agent with builder and add behaviors
@@ -670,5 +700,49 @@ mod tests {
         } else {
             panic!("Expected ConfigurationError");
         }
+    }
+
+    #[tokio::test]
+    async fn test_spanish_agent_language_threading() {
+        // Create Spanish agent
+        let config = AgentConfig {
+            agent: AgentPersonality {
+                name: "Miguel".to_string(),
+                role: "merchant".to_string(),
+                backstory: vec!["Spanish merchant".to_string()],
+                knowledge: vec![],
+            },
+            memory: MemoryConfig::default(),
+            inference: InferenceConfig::default(),
+            behavior: HashMap::new(),
+            tts: None,
+            prompts: Some(PromptConfig::from_bundled_default().unwrap()),
+            language: "es".to_string(), // Spanish
+        };
+
+        let agent = Agent::new(config);
+        agent.start().await.unwrap();
+
+        // Verify agent has Spanish language
+        assert_eq!(agent.config.language, "es");
+
+        // Add a memory and verify it's stored with Spanish language
+        let memory = Memory::new(
+            MemoryCategory::Semantic,
+            "Soy comerciante",
+            0.5,
+            None,
+            Some(&agent.config.language),
+        );
+        agent.memory.add(memory).await.unwrap();
+
+        // Retrieve and verify language tag persisted
+        let memories = agent
+            .memory
+            .retrieve_relevant("comerciante", 1, None, Some("es"))
+            .await
+            .unwrap();
+        assert_eq!(memories.len(), 1);
+        assert_eq!(memories[0].language, "es");
     }
 }

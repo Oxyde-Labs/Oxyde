@@ -280,11 +280,7 @@ impl TTSService {
             &settings.voice_id
         };
 
-        let model_id = if language == Some("en") || language.is_none() {
-            "eleven_monolingual_v1"
-        } else {
-            "eleven_multilingual_v2"
-        };
+        let model_id = "eleven_multilingual_v2";
 
         let request_body = serde_json::json!({
             "text": text,

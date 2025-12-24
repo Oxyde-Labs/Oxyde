@@ -259,8 +259,6 @@ impl InferenceProvider for CloudInferenceProvider {
                 .await
                 .map_err(|e| OxydeError::InferenceError(format!("Failed to parse API response: {}", e)))
         }).await.map_err(|_| OxydeError::InferenceError("API request timed out".to_string()))??;
-
-        println!("API Response: {}", api_response);
         
         // Extract the response text
         let response_text = api_response["choices"][0]["message"]["content"]
@@ -417,6 +415,7 @@ impl InferenceEngine {
                     .ok_or_else(|| OxydeError::InferenceError(
                         "No API key configured. Set OXYDE_API_KEY environment variable or configure in InferenceConfig".to_string()
                     ))?;
+
                 
                 let cloud_provider = CloudInferenceProvider {
                     api_endpoint,
