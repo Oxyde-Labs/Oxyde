@@ -6,8 +6,6 @@ use tokio::sync::RwLock;
 
 /// Audio cache management module.
 pub mod audio_cache;
-/// Emotion modeling module.
-pub mod emotion;
 /// TTS providers module.
 pub mod providers;
 /// Voice profiles module.
@@ -278,6 +276,8 @@ impl TTSService {
         let client = reqwest::Client::new();
         let api_key = std::env::var("ELEVENLABS_API_KEY")
             .map_err(|_| TTSError::MissingApiKey("ElevenLabs"))?;
+
+        println!("elevenlabs api key {}", api_key);
 
         // Use a valid ElevenLabs voice ID
         let voice_id = if settings.voice_id == "default" {

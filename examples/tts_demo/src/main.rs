@@ -49,7 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         moderation: oxyde::config::ModerationConfig {
             enabled: false,
             ..Default::default()
-        }
+        },
+        prompts: None
     };
 
     // Create agent with TTS enabled

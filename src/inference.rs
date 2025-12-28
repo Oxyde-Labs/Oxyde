@@ -45,6 +45,9 @@ pub struct InferenceRequest {
     
     /// Temperature
     pub temperature: f32,
+
+    ///memory context
+    pub memory_context: String,
 }
 
 /// Response from the inference engine
@@ -125,12 +128,9 @@ impl InferenceProvider for LocalInferenceProvider {
         prompt.push_str("\n\n");
         
         // Add memories as context
-        if !request.memories.is_empty() {
-            prompt.push_str("Relevant context:\n");
-            for memory in &request.memories {
-                prompt.push_str(&format!("- {}\n", memory.content));
-            }
-            prompt.push_str("\n");
+        if !request.memory_context.is_empty() {
+            prompt.push_str(&request.memory_context);
+            prompt.push_str("\n\n");
         }
         
         // Add user input
@@ -174,15 +174,21 @@ impl InferenceProvider for CloudInferenceProvider {
         let mut messages = vec![system_message];
         
         // Add memories as context if available
-        if !request.memories.is_empty() {
-            let memories_content = request.memories.iter()
-                .map(|m| format!("- {}", m.content))
-                .collect::<Vec<_>>()
-                .join("\n");
+        if !request.memory_context.is_empty() {
+            // let memories_content = request.memories.iter()
+            //     .map(|m| format!("- {}", m.content))
+            //     .collect::<Vec<_>>()
+            //     .join("\n");
             
+            // let context_message = serde_json::json!({
+            //     "role": "system",
+            //     "content": format!("Relevant context:\n{}", memories_content),
+            // });
+            
+            // messages.push(context_message);
             let context_message = serde_json::json!({
                 "role": "system",
-                "content": format!("Relevant context:\n{}", memories_content),
+                "content": request.memory_context,
             });
             
             messages.push(context_message);
@@ -289,8 +295,10 @@ impl InferenceEngine {
         input: &str,
         memories: &[Memory],
         context: &AgentContext,
+        system_prompt: &str,
+        memory_context: &str,
     ) -> Result<String> {
-        let request = self.prepare_request(input, memories, context);
+        let request = self.prepare_request(input, memories, context, system_prompt, memory_context);
         
         // Try primary provider first
         let provider_type = *self.provider_type.read().await;
@@ -325,22 +333,25 @@ impl InferenceEngine {
         input: &str,
         memories: &[Memory],
         context: &AgentContext,
+        system_prompt: &str,
+        memory_context: &str,
     ) -> InferenceRequest {
         // Create system prompt for the agent
-        let system_prompt = format!(
-            "You are an NPC named {} who is a {}. \
-            Respond in character with brief, concise answers.",
-            context.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown"),
-            context.get("role").and_then(|v| v.as_str()).unwrap_or("character"),
-        );
+        // let system_prompt = format!(
+        //     "You are an NPC named {} who is a {}. \
+        //     Respond in character with brief, concise answers.",
+        //     context.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown"),
+        //     context.get("role").and_then(|v| v.as_str()).unwrap_or("character"),
+        // );
         
         InferenceRequest {
             input: input.to_string(),
-            system_prompt,
+            system_prompt: system_prompt.to_string(),
             memories: memories.to_vec(),
             context: context.clone(),
             max_tokens: self.config.max_tokens,
             temperature: self.config.temperature,
+            memory_context: memory_context.to_string(),
         }
     }
     
@@ -431,5 +442,28 @@ mod tests {
         
         let stats = engine.get_stats().await;
         assert_eq!(stats.total_requests, 0);
+    }
+
+    #[tokio::test]
+    async fn test_inference_with_prompts() {
+        let config = InferenceConfig::default();
+        let engine = InferenceEngine::new(&config);
+        
+        let memories = vec![];
+        let context = AgentContext::new();
+        let system_prompt = "You are a test NPC.";
+        let memory_context = "Previous interactions: none";
+        
+        // This will fail without API key, but tests the signature
+        let result = engine.generate_response(
+            "Hello",
+            &memories,
+            &context,
+            system_prompt,
+            memory_context,
+        ).await;
+        
+        // We expect an error due to missing API key, not a panic ..... fix
+        assert!(result.is_err());
     }
 }
